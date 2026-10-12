@@ -5,6 +5,7 @@ node_modules/
 dist/
 dist-electron/
 out/
+release/
 
 # Environment variables & local configs
 .env
@@ -20,5 +21,6 @@ yarn-error.log*
 # OS & Editor
 .DS_Store
 Thumbs.db
+*.lnk
 .vscode/
 .idea/

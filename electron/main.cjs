@@ -326,8 +326,9 @@ function createWindow() {
     }
   });
 
-  if (app.isPackaged) {
-    mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
+  const localDist = path.join(__dirname, "../dist/index.html");
+  if (app.isPackaged || fs.existsSync(localDist)) {
+    mainWindow.loadFile(localDist);
   } else {
     mainWindow.loadURL("http://127.0.0.1:5173");
   }

@@ -22,7 +22,17 @@ npm run build
 npm start
 ```
 
-`npm start` sau khi build sẽ mở ứng dụng Electron từ thư mục `dist`.
+## Đóng gói file .exe chạy trực tiếp
+
+Để tạo file `.exe` độc lập có thể nhấn đúp là chạy ngay mà không cần mở terminal hay gõ lệnh:
+
+```powershell
+npm run package
+```
+
+Sau khi đóng gói, file ứng dụng nằm tại:
+- `release\Multi Launcher-win32-x64\Multi Launcher.exe`
+- Hoặc bạn có thể nhấp đúp trực tiếp vào file shortcut **`Multi Launcher.lnk`** hoặc **`Chay_Multi_Launcher.bat`** ngay tại thư mục gốc của dự án.
 
 ## Tính năng nổi bật
 - **Khởi chạy tổ hợp nhiều ứng dụng (Workspace Suite)**: Tích chọn nhiều phần mềm khác nhau (Chrome, Edge, VS Code, Notepad, Office...) và mở tất cả chỉ với 1 click.
