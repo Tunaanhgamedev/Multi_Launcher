@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, dialog, screen } = require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -358,9 +358,67 @@ function normalizeUrls(raw, count) {
   return Array.from({ length: count }, (_, i) => urls[i % urls.length]);
 }
 
+/**
+ * Tính toán kích thước và vị trí từng cửa sổ sao cho lấp đầy 100% diện tích màn hình máy tính
+ * Không để lại bất kỳ khoảng trống nào, cân đối giữa các dòng
+ */
+function calculateWindowBounds(total, index, workArea) {
+  const areaX = workArea?.x || 0;
+  const areaY = workArea?.y || 0;
+  const width = workArea?.width || 1920;
+  const height = workArea?.height || 1080;
+
+  if (total <= 1) {
+    return { x: areaX, y: areaY, width, height };
+  }
+
+  const cols = Math.ceil(Math.sqrt(total));
+  const rows = Math.ceil(total / cols);
+  const rowH = Math.floor(height / rows);
+
+  // Phân bổ số lượng cửa sổ trên từng dòng để mỗi dòng đều trải đều 100% chiều rộng
+  const itemsPerRow = [];
+  let rem = total;
+  for (let r = 0; r < rows; r++) {
+    const rowsLeft = rows - r;
+    const countInRow = Math.ceil(rem / rowsLeft);
+    itemsPerRow.push(countInRow);
+    rem -= countInRow;
+  }
+
+  let currentRow = 0;
+  let offsetInRow = index;
+  let accumulated = 0;
+  for (let r = 0; r < rows; r++) {
+    if (index < accumulated + itemsPerRow[r]) {
+      currentRow = r;
+      offsetInRow = index - accumulated;
+      break;
+    }
+    accumulated += itemsPerRow[r];
+  }
+
+  const countInRow = itemsPerRow[currentRow];
+  const colW = Math.floor(width / countInRow);
+  const posX = areaX + offsetInRow * colW;
+  const posY = areaY + currentRow * rowH;
+  const actualW = offsetInRow === countInRow - 1 ? width - offsetInRow * colW : colW;
+  const actualH = currentRow === rows - 1 ? height - currentRow * rowH : rowH;
+
+  return {
+    x: posX,
+    y: posY,
+    width: actualW,
+    height: actualH
+  };
+}
+
+/**
+ * Script Win32 PowerShell tìm các cửa sổ, un-maximize (SW_RESTORE) và căn chỉnh thành lưới vừa khít màn hình
+ */
 async function arrangeWindows(targetPattern = "Chrome") {
-  if (process.platform !== "win32") return { arranged: false, message: "Sắp xếp lưới chỉ được hỗ trợ trên Windows." };
-  const safePattern = String(targetPattern || "Chrome").replace(/'/g, "''");
+  if (process.platform !== "win32") return { arranged: false, count: 0, message: "Sắp xếp lưới chỉ được hỗ trợ trên Windows." };
+  const safePattern = String(targetPattern || ".*").replace(/'/g, "''");
   const ps = String.raw`
 param($pat = '${safePattern}')
 Add-Type @"
@@ -373,8 +431,7 @@ public class Win32 {
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
   [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool repaint);
-  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
-  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 }
 "@
 $wins = New-Object System.Collections.Generic.List[System.IntPtr]
@@ -384,21 +441,47 @@ $wins = New-Object System.Collections.Generic.List[System.IntPtr]
     $sb = New-Object System.Text.StringBuilder 512
     [void][Win32]::GetWindowText($h, $sb, $sb.Capacity)
     $text = $sb.ToString()
-    if ($text -and ($text -match $pat)) { $wins.Add($h) }
+    if ($text -and ($text -notmatch 'Multi Launcher') -and ($text -notmatch '^Program Manager$') -and ($text -match $pat)) {
+      $wins.Add($h)
+    }
   }
   return $true
 }, [IntPtr]::Zero)
+
 $screen = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
 $n = $wins.Count
 if ($n -gt 0) {
   $cols = [Math]::Ceiling([Math]::Sqrt($n))
   $rows = [Math]::Ceiling($n / $cols)
-  $w = [Math]::Floor($screen.Width / $cols)
-  $h = [Math]::Floor($screen.Height / $rows)
-  for ($i=0; $i -lt $n; $i++) {
-    $x = $screen.Left + (($i % $cols) * $w)
-    $y = $screen.Top + ([Math]::Floor($i / $cols) * $h)
-    [void][Win32]::MoveWindow($wins[$i], $x, $y, $w, $h, $true)
+  $rowH = [Math]::Floor($screen.Height / $rows)
+
+  $itemsPerRow = New-Object System.Collections.Generic.List[int]
+  $rem = $n
+  for ($r = 0; $r -lt $rows; $r++) {
+    $rowsLeft = $rows - $r
+    $c = [Math]::Ceiling($rem / $rowsLeft)
+    $itemsPerRow.Add($c)
+    $rem -= $c
+  }
+
+  $idx = 0
+  for ($r = 0; $r -lt $rows; $r++) {
+    $countInRow = $itemsPerRow[$r]
+    $colW = [Math]::Floor($screen.Width / $countInRow)
+    $y = $screen.Top + ($r * $rowH)
+    $actualH = if ($r -eq ($rows - 1)) { $screen.Height - ($r * $rowH) } else { $rowH }
+
+    for ($c = 0; $c -lt $countInRow; $c++) {
+      if ($idx -lt $n) {
+        $x = $screen.Left + ($c * $colW)
+        $actualW = if ($c -eq ($countInRow - 1)) { $screen.Width - ($c * $colW) } else { $colW }
+        $h = $wins[$idx]
+        # SW_RESTORE = 9 ensures the window is NOT maximized
+        [void][Win32]::ShowWindow($h, 9)
+        [void][Win32]::MoveWindow($h, $x, $y, $actualW, $actualH, $true)
+        $idx++
+      }
+    }
   }
 }
 Write-Output $wins.Count
@@ -414,10 +497,11 @@ Write-Output $wins.Count
     child.stdout.on("data", (d) => (out += d.toString()));
     child.stderr.on("data", (d) => (err += d.toString()));
     child.on("close", (code) => {
-      if (code === 0) resolve({ arranged: true, message: `Đã sắp xếp ${out.trim() || "các"} cửa sổ trên màn hình.` });
-      else resolve({ arranged: false, message: `Không thể sắp xếp tự động: ${err.trim() || "PowerShell trả về lỗi."}` });
+      const count = Number(out.trim()) || 0;
+      if (code === 0) resolve({ arranged: true, count, message: `Đã tự động căn chỉnh ${count} cửa sổ vừa khít toàn bộ màn hình.` });
+      else resolve({ arranged: false, count: 0, message: `Không thể sắp xếp tự động: ${err.trim() || "PowerShell trả về lỗi."}` });
     });
-    child.on("error", () => resolve({ arranged: false, message: "Không thể khởi chạy PowerShell để sắp xếp cửa sổ." }));
+    child.on("error", () => resolve({ arranged: false, count: 0, message: "Không thể khởi chạy PowerShell để sắp xếp cửa sổ." }));
   });
 }
 
@@ -480,6 +564,10 @@ ipcMain.handle("launcher:browse-app", async () => {
   };
 });
 
+ipcMain.handle("launcher:arrange-windows", async (_event, pattern) => {
+  return await arrangeWindows(pattern || ".*");
+});
+
 ipcMain.handle("launcher:stop", () => {
   if (activeJob) activeJob.cancelled = true;
   return { ok: true };
@@ -490,6 +578,16 @@ ipcMain.handle("launcher:start", async (_event, config) => {
 
   const modeType = config.modeType || "single-app"; // 'single-app' | 'multi-app'
   const delayMs = Math.max(0, Math.min(10000, Number(config.delayMs) || 0));
+
+  let workArea = { x: 0, y: 0, width: 1920, height: 1040 };
+  try {
+    const primaryDisplay = screen.getPrimaryDisplay();
+    if (primaryDisplay && primaryDisplay.workArea) {
+      workArea = primaryDisplay.workArea;
+    }
+  } catch {
+    // fallback
+  }
 
   const job = { cancelled: false };
   activeJob = job;
@@ -509,6 +607,8 @@ ipcMain.handle("launcher:start", async (_event, config) => {
         .map((s) => s.trim())
         .filter(Boolean);
 
+      const isWindowMode = config.browserMode === "windows";
+
       for (let i = 0; i < apps.length; i++) {
         if (job.cancelled) break;
         const currentApp = apps[i];
@@ -519,12 +619,25 @@ ipcMain.handle("launcher:start", async (_event, config) => {
 
         let args = [];
         if (currentApp.type === "browser") {
-          const browserMode = config.browserMode === "windows" ? "windows" : "tabs";
           const isFirefox = /firefox/i.test(currentApp.name || currentApp.path);
+          const bounds = calculateWindowBounds(apps.length, i, workArea);
+
           if (urlList.length > 0) {
             const url = urlList[i % urlList.length];
-            const prefix = isFirefox ? (browserMode === "windows" ? "-new-window" : "-new-tab") : (browserMode === "windows" ? "--new-window" : "--new-tab");
-            args = [prefix, url];
+            if (isFirefox) {
+              args = isWindowMode ? ["-new-window", url] : ["-new-tab", url];
+            } else {
+              if (isWindowMode) {
+                args = [
+                  "--new-window",
+                  `--window-position=${bounds.x},${bounds.y}`,
+                  `--window-size=${bounds.width},${bounds.height}`,
+                  url
+                ];
+              } else {
+                args = ["--new-tab", url];
+              }
+            }
           }
         } else if (currentApp.customArgs) {
           args = String(currentApp.customArgs).split(" ").filter(Boolean);
@@ -544,16 +657,27 @@ ipcMain.handle("launcher:start", async (_event, config) => {
         }
       }
 
+      let layoutMessage = "";
+      if (!job.cancelled && isWindowMode && config.grid !== false) {
+        await delay(1200);
+        const patterns = apps.map((a) => a.windowPattern || a.name).filter(Boolean);
+        const targetPattern = patterns.length ? patterns.join("|") : ".*";
+        const result = await arrangeWindows(targetPattern);
+        layoutMessage = result.message;
+      }
+
       const cancelled = job.cancelled;
       sendProgress({
         type: "done",
         opened,
         total,
         cancelled,
-        message: cancelled ? `Đã dừng. Đã mở ${opened}/${total} ứng dụng.` : `Hoàn tất: Đã mở thành công ${opened}/${total} ứng dụng.`
+        message: cancelled
+          ? `Đã dừng. Đã mở ${opened}/${total} ứng dụng.`
+          : `Hoàn tất: Đã mở thành công ${opened}/${total} ứng dụng. ${layoutMessage}`.trim()
       });
 
-      return { ok: true, opened, total, cancelled };
+      return { ok: true, opened, total, cancelled, message: layoutMessage };
     } else {
       // Chế độ mở hàng loạt 1 ứng dụng
       const targetApp = config.targetApp || {
@@ -588,8 +712,21 @@ ipcMain.handle("launcher:start", async (_event, config) => {
 
         if (isBrowser) {
           const url = urls[i];
-          const prefix = isFirefox ? (mode === "windows" ? "-new-window" : "-new-tab") : (mode === "windows" ? "--new-window" : "--new-tab");
-          args = [prefix, url];
+          const bounds = calculateWindowBounds(count, i, workArea);
+          if (isFirefox) {
+            args = mode === "windows" ? ["-new-window", url] : ["-new-tab", url];
+          } else {
+            if (mode === "windows") {
+              args = [
+                "--new-window",
+                `--window-position=${bounds.x},${bounds.y}`,
+                `--window-size=${bounds.width},${bounds.height}`,
+                url
+              ];
+            } else {
+              args = ["--new-tab", url];
+            }
+          }
         } else if (config.customArgs) {
           args = String(config.customArgs).split(" ").filter(Boolean);
         }
@@ -609,8 +746,8 @@ ipcMain.handle("launcher:start", async (_event, config) => {
       }
 
       let layoutMessage = "";
-      if (!job.cancelled && isBrowser && mode === "windows" && config.grid) {
-        await delay(1500);
+      if (!job.cancelled && mode === "windows" && config.grid !== false) {
+        await delay(1200);
         const result = await arrangeWindows(targetApp.windowPattern || targetApp.name || "Chrome");
         layoutMessage = result.message;
       }
@@ -626,7 +763,7 @@ ipcMain.handle("launcher:start", async (_event, config) => {
           : `Hoàn tất: đã gửi lệnh mở ${opened}/${count} ${targetApp.name}. ${layoutMessage}`.trim()
       });
 
-      return { ok: true, opened, total: count, cancelled, message: layoutMessage };
+      return { ok: true, opened, total, count, cancelled, message: layoutMessage };
     }
   } catch (e) {
     return { ok: false, error: e.message, opened: 0 };

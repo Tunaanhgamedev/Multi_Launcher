@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld("launcher", {
   start: (config) => ipcRenderer.invoke("launcher:start", config),
   stop: () => ipcRenderer.invoke("launcher:stop"),
   openUrl: (url) => ipcRenderer.invoke("launcher:open-url", url),
+  arrangeWindows: (pattern) => ipcRenderer.invoke("launcher:arrange-windows", pattern),
   onProgress: (callback) => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("launcher:progress", listener);

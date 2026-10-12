@@ -11,11 +11,11 @@ export default function App() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   
   // Cấu hình mở
-  const [mode, setMode] = useState("tabs"); // tabs | windows
+  const [mode, setMode] = useState("windows"); // Mặc định mở nhiều Cửa sổ riêng
   const [count, setCount] = useState(5);
   const [delayMs, setDelayMs] = useState(1000);
   const [urls, setUrls] = useState(DEFAULT_URLS);
-  const [grid, setGrid] = useState(true);
+  const [grid, setGrid] = useState(true); // Mặc định tự động dàn cửa sổ vừa khít màn hình
 
   // Tiến trình & Trạng thái
   const [running, setRunning] = useState(false);
@@ -158,6 +158,25 @@ export default function App() {
     setSelectedAppIds(new Set());
   }
 
+  // Căn chỉnh ngay các cửa sổ trên màn hình
+  async function handleArrangeNow() {
+    setError("");
+    setStatus("Đang căn chỉnh các cửa sổ vừa khít màn hình...");
+    try {
+      const targetPattern = workflow === "single"
+        ? (currentTargetApp?.windowPattern || currentTargetApp?.name || "Chrome")
+        : (apps.filter((a) => selectedAppIds.has(a.id)).map((a) => a.windowPattern || a.name).join("|") || ".*");
+      const res = await window.launcher.arrangeWindows(targetPattern);
+      if (res.arranged) {
+        setStatus(res.message || "Đã căn chỉnh các cửa sổ thành công.");
+      } else {
+        setError(res.message || "Không thể sắp xếp cửa sổ.");
+      }
+    } catch (e) {
+      setError("Lỗi khi căn chỉnh cửa sổ: " + e.message);
+    }
+  }
+
   // Bắt đầu khởi chạy
   async function handleStart() {
     setError("");
@@ -179,7 +198,8 @@ export default function App() {
         selectedApps: chosenApps,
         delayMs,
         urls,
-        browserMode: mode
+        browserMode: mode,
+        grid
       });
 
       if (!result.ok) {
@@ -234,7 +254,7 @@ export default function App() {
         <div>
           <p className="eyebrow">WINDOWS MULTI-APP LAUNCHER</p>
           <h1>Multi Launcher</h1>
-          <p className="subtitle">Khởi chạy nhiều ứng dụng và trình duyệt tùy chọn trên máy tính</p>
+          <p className="subtitle">Khởi chạy nhiều ứng dụng & tự sắp xếp vừa khít màn hình máy tính</p>
         </div>
         <span className="pill ok">
           Đã nhận diện: {availableCount} ứng dụng
@@ -385,9 +405,9 @@ export default function App() {
         <div className="section-heading">
           <div>
             <span className="step">03</span>
-            <h2>Cấu hình tham số</h2>
+            <h2>Cấu hình & Tùy chọn màn hình</h2>
           </div>
-          <span className="muted">Điều chỉnh tham số mở</span>
+          <span className="muted">Điều chỉnh cách hiển thị trên màn hình</span>
         </div>
 
         <div className="fields">
@@ -420,12 +440,12 @@ export default function App() {
             </select>
           </label>
 
-          {/* Nếu có trình duyệt */}
+          {/* Chế độ cửa sổ / Tab */}
           <label className="field">
             <span>Chế độ cửa sổ (đối với Trình duyệt)</span>
             <select value={mode} disabled={running} onChange={(e) => setMode(e.target.value)}>
-              <option value="tabs">Nhiều Tab (Dùng chung cửa sổ)</option>
-              <option value="windows">Nhiều Cửa sổ riêng biệt</option>
+              <option value="windows">Nhiều Cửa sổ riêng biệt (Tự chia màn hình)</option>
+              <option value="tabs">Nhiều Tab (Chung 1 cửa sổ)</option>
             </select>
           </label>
         </div>
@@ -445,12 +465,14 @@ export default function App() {
           />
         </label>
 
-        {mode === "windows" && workflow === "single" && (
+        {mode === "windows" && (
           <label className="check-row">
             <input type="checkbox" checked={grid} disabled={running} onChange={(e) => setGrid(e.target.checked)} />
             <span>
-              <strong>Tự động sắp xếp cửa sổ thành lưới (Grid)</strong>
-              <small>Tự sắp xếp các cửa sổ ứng dụng vừa mở thành lưới ngăn nắp trên màn hình chính.</small>
+              <strong>Tự động sắp xếp vừa khít toàn bộ màn hình (Auto Fit Grid)</strong>
+              <small>
+                Thay vì mỗi cửa sổ mở ra đều full màn đè lên nhau, hệ thống sẽ tự tính toán kích thước và chia đều diện tích màn hình để tất cả cửa sổ khớp hoàn toàn với màn hình máy tính (không để lại khoảng trống thừa).
+              </small>
             </span>
           </label>
         )}
@@ -461,7 +483,7 @@ export default function App() {
         <div className="section-heading">
           <div>
             <span className="step">04</span>
-            <h2>Trạng thái & Tiến trình</h2>
+            <h2>Trạng thái & Điều khiển</h2>
           </div>
           <strong className="counter">
             {progress.opened}
@@ -485,13 +507,23 @@ export default function App() {
           >
             ▶ &nbsp; {workflow === "multi" ? `Bắt đầu mở ${selectedCount} ứng dụng` : `Bắt đầu mở ${currentTargetApp ? currentTargetApp.name : "ứng dụng"}`}
           </button>
-          <button className="secondary" onClick={handleStop} disabled={!running}>
+          
+          <button
+            type="button"
+            className="secondary arrange-btn"
+            onClick={handleArrangeNow}
+            title="Căn chỉnh lại toàn bộ cửa sổ đang hiển thị vừa khít với màn hình máy tính"
+          >
+            📐 Căn chỉnh cửa sổ ngay
+          </button>
+
+          <button className="secondary stop-btn" onClick={handleStop} disabled={!running}>
             ■ &nbsp; Dừng lại
           </button>
         </div>
 
         <p className="notice">
-          Mẹo: Bạn có thể nhấn <strong>"+ Chọn file .exe từ máy"</strong> để thêm bất kỳ phần mềm hoặc file chạy nào (như game, Photoshop, Discord, tool cá nhân...). Dừng chỉ ngăn các lần mở tiếp theo.
+          Mẹo: Nếu bạn đã có sẵn các cửa sổ đang mở hoặc bị lệch kích thước, bạn có thể nhấn <strong>"📐 Căn chỉnh cửa sổ ngay"</strong> bất kỳ lúc nào để tự động dàn đều chúng khít với màn hình.
         </p>
       </section>
 

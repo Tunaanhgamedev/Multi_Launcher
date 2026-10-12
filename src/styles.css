@@ -570,6 +570,7 @@ textarea {
 .actions {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .actions button {
@@ -577,10 +578,15 @@ textarea {
   padding: 12px 16px;
   font-size: 11px;
   font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 .primary {
-  flex: 1;
+  flex: 1.5;
+  min-width: 180px;
   border: 1px solid #8c7dff;
   color: white;
   background: linear-gradient(100deg, #7564ec, #5746ce);
@@ -599,6 +605,22 @@ textarea {
 
 .secondary:hover:not(:disabled) {
   background: #232c3d;
+}
+
+.arrange-btn {
+  border-color: #5548a3;
+  color: #d1c8ff;
+  background: #1c1834;
+}
+
+.arrange-btn:hover:not(:disabled) {
+  background: #2b2452;
+  border-color: #7966eb;
+  color: #ffffff;
+}
+
+.stop-btn {
+  min-width: 90px;
 }
 
 .notice {
