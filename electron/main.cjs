@@ -332,6 +332,18 @@ function createWindow() {
   } else {
     mainWindow.loadURL("http://127.0.0.1:5173");
   }
+
+  // Phím tắt F12 để mở DevTools kiểm tra nếu cần
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    if (input.key === "F12" && input.type === "keyDown") {
+      mainWindow.webContents.toggleDevTools();
+      event.preventDefault();
+    }
+  });
+
+  mainWindow.webContents.on("did-fail-load", (event, errorCode, errorDescription, validatedURL) => {
+    console.error("Không thể tải trang:", errorCode, errorDescription, validatedURL);
+  });
 }
 
 function delay(ms) {
