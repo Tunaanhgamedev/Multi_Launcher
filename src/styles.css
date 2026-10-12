@@ -1,0 +1,644 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+:root {
+  font-family: Inter, "Segoe UI", -apple-system, sans-serif;
+  color: #eef2f8;
+  background: #0c1017;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 650px;
+  min-height: 100vh;
+  background: radial-gradient(ellipse at 12% 0%, #1a2940 0%, #0c1017 50%);
+}
+
+button, input, select, textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+button:disabled, input:disabled, select:disabled, textarea:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+.shell {
+  width: min(880px, calc(100% - 44px));
+  margin: 0 auto;
+  padding: 26px 0 28px;
+}
+
+/* Header */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.brand-icon {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 15px;
+  background: linear-gradient(145deg, #8c76ff, #5144d7);
+  box-shadow: 0 8px 28px #6554d944;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -1px;
+}
+
+.eyebrow {
+  margin: 0 0 3px;
+  color: #8c9bb3;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.6px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: -.6px;
+}
+
+.subtitle {
+  margin: 4px 0 0;
+  color: #95a1b4;
+  font-size: 12px;
+}
+
+.pill {
+  margin-left: auto;
+  border: 1px solid #344152;
+  border-radius: 100px;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pill.ok {
+  color: #9de3c0;
+  background: #17342c;
+  border-color: #285943;
+}
+
+.panel {
+  border: 1px solid #273140;
+  border-radius: 16px;
+  background: linear-gradient(145deg, #171e29, #121822);
+  padding: 20px;
+  margin-bottom: 15px;
+  box-shadow: 0 10px 35px #00000018;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 15px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.section-heading > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.step {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 8px;
+  color: #b5aaff;
+  background: #302a51;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+h2 {
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: -.2px;
+}
+
+.muted {
+  color: #78869a;
+  font-size: 11px;
+}
+
+/* Bước 1: Workflow Toggle */
+.workflow-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.workflow-btn {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid #2e3848;
+  border-radius: 12px;
+  background: #10151f;
+  color: #d8e0ee;
+  text-align: left;
+}
+
+.workflow-btn:hover:not(:disabled) {
+  border-color: #6d5fe0;
+  background: #141b27;
+}
+
+.workflow-btn.active {
+  border-color: #8374ff;
+  background: linear-gradient(145deg, #252244, #141a27);
+  box-shadow: inset 0 0 0 1px #8374ff44;
+}
+
+.workflow-icon {
+  font-size: 22px;
+  color: #a496ff;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+.workflow-btn strong {
+  display: block;
+  font-size: 12px;
+  color: #f1f4fa;
+  margin-bottom: 4px;
+}
+
+.workflow-btn small {
+  display: block;
+  font-size: 10px;
+  color: #8c9bb0;
+  line-height: 1.45;
+}
+
+/* Nút duyệt ứng dụng */
+.browse-btn {
+  border: 1px solid #7563f7;
+  border-radius: 8px;
+  background: #2b254c;
+  color: #dcd6ff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 12px;
+}
+
+.browse-btn:hover:not(:disabled) {
+  background: #3c326e;
+  border-color: #9283ff;
+  color: #ffffff;
+}
+
+/* Thanh bộ lọc ứng dụng */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.filter-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  border: 1px solid #2f3a4b;
+  border-radius: 20px;
+  background: #0e131b;
+  color: #9aa7ba;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 4px 10px;
+}
+
+.chip:hover {
+  color: #eef2f8;
+  border-color: #4f5f77;
+}
+
+.chip.active {
+  color: #dcd6ff;
+  background: #282444;
+  border-color: #7b6cee;
+}
+
+.selection-quick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #718095;
+  font-size: 10px;
+}
+
+.selection-quick button {
+  background: none;
+  border: none;
+  color: #9bb0cd;
+  padding: 0;
+  font-size: 10px;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.selection-quick button:hover:not(:disabled) {
+  color: #c9d8ff;
+}
+
+/* Lưới ứng dụng */
+.apps-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
+  gap: 10px;
+  max-height: 310px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.apps-grid::-webkit-scrollbar {
+  width: 6px;
+}
+
+.apps-grid::-webkit-scrollbar-thumb {
+  background: #2b3545;
+  border-radius: 10px;
+}
+
+.app-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 96px;
+  padding: 11px 12px;
+  border: 1px solid #2a3444;
+  border-radius: 11px;
+  background: #111620;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+
+.app-card:hover {
+  border-color: #5d53c7;
+  background: #141a26;
+}
+
+.app-card.selected {
+  border-color: #8475ff;
+  background: linear-gradient(145deg, #252044, #131824);
+  box-shadow: inset 0 0 0 1px #8475ff33;
+}
+
+.app-card.unavailable {
+  opacity: 0.45;
+  filter: grayscale(0.6);
+  cursor: not-allowed;
+}
+
+.app-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.app-icon {
+  font-size: 18px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: #1b2331;
+  flex-shrink: 0;
+}
+
+.app-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.app-title {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #e8ecf4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-category {
+  display: block;
+  font-size: 9px;
+  color: #8190a6;
+  margin-top: 1px;
+}
+
+.delete-custom-btn {
+  background: none;
+  border: none;
+  color: #8a9bb2;
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  margin-left: 2px;
+}
+
+.delete-custom-btn:hover {
+  color: #ff7d8d;
+  background: #3b1b22;
+}
+
+.app-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+}
+
+.status-badge {
+  font-size: 8px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.status-badge.ready {
+  color: #8ee2b8;
+  background: #122c22;
+  border: 1px solid #1f4736;
+}
+
+.status-badge.missing {
+  color: #929db0;
+  background: #181d27;
+  border: 1px solid #283141;
+}
+
+.card-selector input {
+  cursor: pointer;
+  accent-color: #8172ff;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+}
+
+/* Trường nhập liệu */
+.fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 15px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  color: #dbe1ec;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.field small {
+  color: #8794a8;
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.number-control {
+  display: grid;
+  grid-template-columns: 38px 1fr 38px;
+  border: 1px solid #344052;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0e141d;
+}
+
+.number-control button {
+  border: 0;
+  color: #c2bbff;
+  background: #20253a;
+  font-size: 17px;
+}
+
+.number-control button:hover:not(:disabled) {
+  background: #2e3552;
+}
+
+.number-control input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  text-align: center;
+  color: white;
+  background: transparent;
+  padding: 9px;
+  font-weight: 700;
+}
+
+select, textarea {
+  width: 100%;
+  border: 1px solid #344052;
+  border-radius: 8px;
+  background: #0e141d;
+  color: #e9edf6;
+  outline: none;
+  padding: 10px 12px;
+}
+
+select:focus, textarea:focus, input:focus {
+  border-color: #8a7cff;
+}
+
+textarea {
+  resize: vertical;
+  line-height: 1.55;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.url-field {
+  margin-top: 4px;
+}
+
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #2e3848;
+  border-radius: 9px;
+  background: #0f141f;
+  cursor: pointer;
+}
+
+.check-row input {
+  margin-top: 2px;
+  accent-color: #8576ff;
+}
+
+.check-row span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.check-row strong {
+  font-size: 11px;
+}
+
+.check-row small {
+  color: #8794a8;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+/* Trạng thái & Tiến trình */
+.counter {
+  font-size: 16px;
+  color: #c2bbff;
+}
+
+.counter span {
+  color: #7f8ba0;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.progress-track {
+  height: 6px;
+  background: #242c38;
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 20px;
+  background: linear-gradient(90deg, #6c5ce7, #a79bff);
+  transition: width .25s ease;
+}
+
+.status-text {
+  min-height: 17px;
+  margin: 11px 0 14px;
+  color: #9aa7ba;
+  font-size: 11px;
+}
+
+.error-box {
+  margin: 0 0 12px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid #743b46;
+  background: #321b22;
+  color: #ffb6bd;
+  font-size: 11px;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+}
+
+.actions button {
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.primary {
+  flex: 1;
+  border: 1px solid #8c7dff;
+  color: white;
+  background: linear-gradient(100deg, #7564ec, #5746ce);
+  box-shadow: 0 6px 20px #6554d933;
+}
+
+.primary:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.secondary {
+  border: 1px solid #3a4658;
+  color: #c4ccda;
+  background: #1b2330;
+}
+
+.secondary:hover:not(:disabled) {
+  background: #232c3d;
+}
+
+.notice {
+  margin: 12px 0 0;
+  color: #79879c;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+footer {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 0 0;
+  color: #657287;
+  font-size: 10px;
+}
+
+footer span {
+  color: #8b7cff;
+}
+
+@media (max-width: 720px) {
+  .shell {
+    width: calc(100% - 24px);
+    padding-top: 16px;
+  }
+  .topbar {
+    flex-wrap: wrap;
+  }
+  .pill {
+    margin-left: 68px;
+  }
+  .workflow-toggle {
+    grid-template-columns: 1fr;
+  }
+  .fields {
+    grid-template-columns: 1fr;
+  }
+  body {
+    min-width: 340px;
+  }
+}
