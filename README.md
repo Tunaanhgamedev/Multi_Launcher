@@ -29,7 +29,8 @@ npm start
 - **Khởi chạy hàng loạt 1 ứng dụng (Batch Mode)**: Mở nhiều tab/cửa sổ của bất kỳ trình duyệt hoặc phần mềm nào với độ trễ tùy chỉnh và danh sách URL/tham số.
 - **Tự động dò tìm ứng dụng trên Windows**: Nhận diện Chrome, Microsoft Edge, Cốc Cốc, Brave, Firefox, Opera, Visual Studio Code, Notepad, Calculator, Windows Terminal, Office, v.v.
 - **Duyệt chọn ứng dụng tùy ý trên máy**: Nút "+ Chọn file .exe từ máy" cho phép chọn bất kỳ file thực thi `.exe`, `.bat`, `.cmd`, `.lnk` nào trên tất cả các ổ đĩa và lưu lại để sử dụng.
-- **Sắp xếp cửa sổ dạng lưới (Grid View)**: Tự động dàn các cửa sổ vừa mở thành dạng lưới ngăn nắp trên màn hình.
+- **Đồng bộ thao tác chuột đa tab (Mouse Synchronizer)**: Chỉ cần điều khiển chuột trên 1 cửa sổ, các cửa sổ nhân bản còn lại sẽ tự động click và cuộn trang theo đúng tỷ lệ màn hình. Hỗ trợ nút Bật/Tắt và phím tắt toàn cục **F8** tiện lợi.
+- **Sắp xếp cửa sổ dạng lưới (Grid View)**: Tự động dàn các cửa sổ vừa mở thành dạng lưới ngăn nắp trên màn hình, lấp đầy 100% diện tích không để lại khoảng trống thừa.
 - **Kiểm soát độ trễ & Dừng an toàn**: Cấu hình độ trễ giữa các lần khởi chạy để tránh nghẽn CPU/RAM và dừng bất kỳ lúc nào.
 
 ## Lưu ý

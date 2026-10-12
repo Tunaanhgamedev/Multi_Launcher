@@ -17,6 +17,10 @@ export default function App() {
   const [urls, setUrls] = useState(DEFAULT_URLS);
   const [grid, setGrid] = useState(true); // Mặc định tự động dàn cửa sổ vừa khít màn hình
 
+  // Đồng bộ chuột
+  const [syncActive, setSyncActive] = useState(false);
+  const [syncCount, setSyncCount] = useState(0);
+
   // Tiến trình & Trạng thái
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState("Sẵn sàng. Hãy chọn ứng dụng và nhấn bắt đầu.");
@@ -61,7 +65,14 @@ export default function App() {
 
     loadApps();
 
-    const unsubscribe = window.launcher.onProgress((event) => {
+    // Khởi tạo trạng thái đồng bộ chuột ban đầu
+    if (window.launcher.getMouseSyncStatus) {
+      window.launcher.getMouseSyncStatus().then((res) => {
+        if (res && res.active) setSyncActive(true);
+      });
+    }
+
+    const unsubProgress = window.launcher.onProgress((event) => {
       if (event.type === "progress") {
         setProgress({ opened: event.opened, total: event.total });
         setStatus(event.message);
@@ -74,7 +85,16 @@ export default function App() {
       }
     });
 
-    return unsubscribe;
+    const unsubSync = window.launcher.onMouseSyncStatus ? window.launcher.onMouseSyncStatus((payload) => {
+      setSyncActive(payload.active);
+      if (payload.count !== undefined) setSyncCount(payload.count);
+      if (payload.message) setStatus(payload.message);
+    }) : () => {};
+
+    return () => {
+      unsubProgress();
+      unsubSync();
+    };
   }, []);
 
   // Lọc danh mục ứng dụng
@@ -156,6 +176,20 @@ export default function App() {
 
   function handleDeselectAll() {
     setSelectedAppIds(new Set());
+  }
+
+  // Bật / Tắt đồng bộ chuột
+  async function handleToggleSync() {
+    setError("");
+    try {
+      const targetPattern = workflow === "single"
+        ? (currentTargetApp?.windowPattern || currentTargetApp?.name || "Chrome")
+        : (apps.filter((a) => selectedAppIds.has(a.id)).map((a) => a.windowPattern || a.name).join("|") || ".*");
+      const res = await window.launcher.toggleMouseSync(targetPattern);
+      setSyncActive(res.active);
+    } catch (e) {
+      setError("Lỗi khi chuyển đổi đồng bộ chuột: " + e.message);
+    }
   }
 
   // Căn chỉnh ngay các cửa sổ trên màn hình
@@ -254,11 +288,16 @@ export default function App() {
         <div>
           <p className="eyebrow">WINDOWS MULTI-APP LAUNCHER</p>
           <h1>Multi Launcher</h1>
-          <p className="subtitle">Khởi chạy nhiều ứng dụng & tự sắp xếp vừa khít màn hình máy tính</p>
+          <p className="subtitle">Khởi chạy đa ứng dụng, tự chia màn hình & đồng bộ thao tác chuột</p>
         </div>
-        <span className="pill ok">
-          Đã nhận diện: {availableCount} ứng dụng
-        </span>
+        <div className="topbar-pills">
+          <span className={`pill ${syncActive ? "pill-active" : ""}`} onClick={handleToggleSync} style={{ cursor: "pointer" }} title="Bấm để Bật/Tắt nhanh đồng bộ chuột (Phím tắt: F8)">
+            {syncActive ? "🟢 Đang đồng bộ chuột (F8)" : "⚪ Chuột độc lập (F8)"}
+          </span>
+          <span className="pill ok">
+            Đã nhận diện: {availableCount} ứng dụng
+          </span>
+        </div>
       </header>
 
       {/* Bước 1: Chọn Chế độ hoạt động */}
@@ -478,12 +517,49 @@ export default function App() {
         )}
       </section>
 
-      {/* Bước 4: Trạng thái & Nút hành động */}
-      <section className="panel status-panel">
+      {/* Bước 4: Đồng bộ thao tác chuột (Mouse Synchronizer) */}
+      <section className={`panel sync-panel ${syncActive ? "sync-panel-active" : ""}`}>
         <div className="section-heading">
           <div>
             <span className="step">04</span>
-            <h2>Trạng thái & Điều khiển</h2>
+            <h2>Đồng bộ thao tác chuột đa tab (Mouse Synchronizer)</h2>
+          </div>
+          <span className={`pill ${syncActive ? "pill-active" : ""}`}>
+            {syncActive ? `● ĐANG ĐỒNG BỘ (${syncCount || "đa"} cửa sổ)` : "○ Đang tắt (Dùng từng tab độc lập)"}
+          </span>
+        </div>
+
+        <div className="sync-box">
+          <div className="sync-info">
+            <strong>
+              {syncActive
+                ? "🟢 Tính năng đồng bộ chuột đang BẬT: Thao tác trên 1 tab sẽ lặp lại ở tất cả các tab!"
+                : "🔘 Bấm để bật đồng bộ chuột giữa các cửa sổ đã mở"}
+            </strong>
+            <small>
+              {syncActive
+                ? "Bất kỳ thao tác click chuột trái/phải hoặc cuộn trang trên một cửa sổ bất kỳ sẽ ngay lập tức được nhân bản sang toàn bộ các cửa sổ còn lại theo đúng tọa độ màn hình. Bạn có thể nhấn F8 trên bàn phím bất cứ lúc nào để Bật/Tắt tức thì mà không cần chuyển về cửa sổ này."
+                : "Khi bật, bạn chỉ cần điều khiển chuột trên 1 cửa sổ, các cửa sổ khác sẽ tự động click và cuộn theo y hệt. Phím tắt F8 toàn cục cho phép bật/tắt mọi lúc."}
+            </small>
+          </div>
+
+          <button
+            type="button"
+            className={`sync-toggle-btn ${syncActive ? "active" : ""}`}
+            onClick={handleToggleSync}
+          >
+            <span className="sync-pulse-dot"></span>
+            {syncActive ? "TẮT ĐỒNG BỘ (Phím F8)" : "BẬT ĐỒNG BỘ CHUỘT (Phím F8)"}
+          </button>
+        </div>
+      </section>
+
+      {/* Bước 5: Trạng thái & Nút hành động */}
+      <section className="panel status-panel">
+        <div className="section-heading">
+          <div>
+            <span className="step">05</span>
+            <h2>Khởi chạy & Điều khiển</h2>
           </div>
           <strong className="counter">
             {progress.opened}
@@ -523,12 +599,12 @@ export default function App() {
         </div>
 
         <p className="notice">
-          Mẹo: Nếu bạn đã có sẵn các cửa sổ đang mở hoặc bị lệch kích thước, bạn có thể nhấn <strong>"📐 Căn chỉnh cửa sổ ngay"</strong> bất kỳ lúc nào để tự động dàn đều chúng khít với màn hình.
+          Mẹo: Sau khi mở nhiều cửa sổ và căn chỉnh vừa màn hình, bạn có thể bấm <strong>"BẬT ĐỒNG BỘ CHUỘT"</strong> (hoặc nhấn phím <strong>F8</strong> trên bàn phím) để bắt đầu điều khiển chuột chung cho tất cả các tab!
         </p>
       </section>
 
       <footer>
-        Multi Launcher <span>•</span> Electron + React <span>•</span> Quản lý & Khởi chạy đa ứng dụng Windows
+        Multi Launcher <span>•</span> Electron + React <span>•</span> Quản lý & Khởi chạy đa ứng dụng Windows <span>•</span> Hỗ trợ F8 Mouse Sync
       </footer>
     </main>
   );

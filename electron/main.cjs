@@ -1,10 +1,15 @@
-const { app, BrowserWindow, ipcMain, shell, dialog, screen } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, dialog, screen, globalShortcut } = require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
 let mainWindow;
 let activeJob = null;
+
+// Quản lý tiến trình đồng bộ chuột toàn cục
+let mouseSyncProcess = null;
+let mouseSyncPattern = "Chrome|Edge|CocCoc|browser";
+let isMouseSyncActive = false;
 
 function findChrome() {
   const candidates = [
@@ -308,7 +313,7 @@ async function getAllDetectedApps() {
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 960,
-    height: 820,
+    height: 840,
     minWidth: 720,
     minHeight: 640,
     title: "Multi Launcher",
@@ -338,6 +343,12 @@ function sendProgress(payload) {
   }
 }
 
+function sendSyncStatus(payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("launcher:sync-status", payload);
+  }
+}
+
 function normalizeUrls(raw, count) {
   const entries = String(raw || "")
     .split(/\r?\n/)
@@ -360,7 +371,6 @@ function normalizeUrls(raw, count) {
 
 /**
  * Tính toán kích thước và vị trí từng cửa sổ sao cho lấp đầy 100% diện tích màn hình máy tính
- * Không để lại bất kỳ khoảng trống nào, cân đối giữa các dòng
  */
 function calculateWindowBounds(total, index, workArea) {
   const areaX = workArea?.x || 0;
@@ -376,7 +386,6 @@ function calculateWindowBounds(total, index, workArea) {
   const rows = Math.ceil(total / cols);
   const rowH = Math.floor(height / rows);
 
-  // Phân bổ số lượng cửa sổ trên từng dòng để mỗi dòng đều trải đều 100% chiều rộng
   const itemsPerRow = [];
   let rem = total;
   for (let r = 0; r < rows; r++) {
@@ -476,7 +485,6 @@ if ($n -gt 0) {
         $x = $screen.Left + ($c * $colW)
         $actualW = if ($c -eq ($countInRow - 1)) { $screen.Width - ($c * $colW) } else { $colW }
         $h = $wins[$idx]
-        # SW_RESTORE = 9 ensures the window is NOT maximized
         [void][Win32]::ShowWindow($h, 9)
         [void][Win32]::MoveWindow($h, $x, $y, $actualW, $actualH, $true)
         $idx++
@@ -523,6 +531,77 @@ function launchAppProcess(executablePath, args = []) {
   return child;
 }
 
+// Bắt đầu đồng bộ chuột
+function startMouseSync(pattern) {
+  if (mouseSyncProcess) {
+    stopMouseSync();
+  }
+
+  mouseSyncPattern = pattern || mouseSyncPattern || "Chrome|Edge|CocCoc|browser";
+  const scriptPath = path.join(__dirname, "mouse-sync.ps1");
+
+  try {
+    mouseSyncProcess = spawn(
+      "powershell.exe",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath, "-pattern", mouseSyncPattern],
+      { windowsHide: true }
+    );
+
+    isMouseSyncActive = true;
+
+    mouseSyncProcess.stdout.on("data", (d) => {
+      const text = d.toString();
+      const match = text.match(/READY:\s*(\d+)/i);
+      if (match) {
+        const count = parseInt(match[1], 10);
+        sendSyncStatus({ active: true, count, message: `Đang đồng bộ ${count} cửa sổ (Bấm F8 để Bật/Tắt)` });
+      }
+    });
+
+    mouseSyncProcess.on("close", () => {
+      isMouseSyncActive = false;
+      mouseSyncProcess = null;
+      sendSyncStatus({ active: false, count: 0, message: "Đã dừng đồng bộ chuột" });
+    });
+
+    mouseSyncProcess.on("error", (err) => {
+      isMouseSyncActive = false;
+      mouseSyncProcess = null;
+      sendSyncStatus({ active: false, count: 0, error: err.message, message: "Lỗi tiến trình đồng bộ chuột" });
+    });
+
+    sendSyncStatus({ active: true, count: 0, message: "Đang bật đồng bộ chuột... (Bấm F8 để Tắt)" });
+    return { active: true, message: "Đang khởi động đồng bộ chuột" };
+  } catch (e) {
+    isMouseSyncActive = false;
+    mouseSyncProcess = null;
+    sendSyncStatus({ active: false, count: 0, error: e.message });
+    return { active: false, error: e.message };
+  }
+}
+
+// Dừng đồng bộ chuột
+function stopMouseSync() {
+  if (mouseSyncProcess) {
+    try {
+      mouseSyncProcess.kill();
+    } catch {}
+    mouseSyncProcess = null;
+  }
+  isMouseSyncActive = false;
+  sendSyncStatus({ active: false, count: 0, message: "Đã dừng đồng bộ chuột" });
+  return { active: false };
+}
+
+// Chuyển đổi trạng thái Bật / Tắt đồng bộ chuột
+function toggleMouseSync(pattern) {
+  if (isMouseSyncActive) {
+    return stopMouseSync();
+  } else {
+    return startMouseSync(pattern);
+  }
+}
+
 // IPC Handlers
 ipcMain.handle("launcher:chrome-path", () => ({ path: findChrome(), platform: process.platform }));
 
@@ -566,6 +645,14 @@ ipcMain.handle("launcher:browse-app", async () => {
 
 ipcMain.handle("launcher:arrange-windows", async (_event, pattern) => {
   return await arrangeWindows(pattern || ".*");
+});
+
+ipcMain.handle("launcher:toggle-mouse-sync", (_event, pattern) => {
+  return toggleMouseSync(pattern);
+});
+
+ipcMain.handle("launcher:get-mouse-sync-status", () => {
+  return { active: isMouseSyncActive };
 });
 
 ipcMain.handle("launcher:stop", () => {
@@ -657,12 +744,13 @@ ipcMain.handle("launcher:start", async (_event, config) => {
         }
       }
 
+      const patterns = apps.map((a) => a.windowPattern || a.name).filter(Boolean);
+      mouseSyncPattern = patterns.length ? patterns.join("|") : ".*";
+
       let layoutMessage = "";
       if (!job.cancelled && isWindowMode && config.grid !== false) {
         await delay(1200);
-        const patterns = apps.map((a) => a.windowPattern || a.name).filter(Boolean);
-        const targetPattern = patterns.length ? patterns.join("|") : ".*";
-        const result = await arrangeWindows(targetPattern);
+        const result = await arrangeWindows(mouseSyncPattern);
         layoutMessage = result.message;
       }
 
@@ -690,6 +778,8 @@ ipcMain.handle("launcher:start", async (_event, config) => {
       if (!targetApp.path || !fs.existsSync(targetApp.path)) {
         return { ok: false, error: `Không tìm thấy ứng dụng ${targetApp.name || "được chọn"}. Vui lòng kiểm tra lại đường dẫn.` };
       }
+
+      mouseSyncPattern = targetApp.windowPattern || targetApp.name || "Chrome";
 
       const count = Math.max(1, Math.min(20, Number(config.count) || 1));
       const mode = config.mode === "windows" ? "windows" : "tabs";
@@ -748,7 +838,7 @@ ipcMain.handle("launcher:start", async (_event, config) => {
       let layoutMessage = "";
       if (!job.cancelled && mode === "windows" && config.grid !== false) {
         await delay(1200);
-        const result = await arrangeWindows(targetApp.windowPattern || targetApp.name || "Chrome");
+        const result = await arrangeWindows(mouseSyncPattern);
         layoutMessage = result.message;
       }
 
@@ -780,9 +870,26 @@ ipcMain.handle("launcher:open-url", async (_event, url) => {
 
 app.whenReady().then(() => {
   createWindow();
+
+  // Đăng ký phím tắt F8 toàn cục để bật/tắt đồng bộ chuột nhanh từ bất kỳ cửa sổ nào
+  try {
+    globalShortcut.register("F8", () => {
+      toggleMouseSync(mouseSyncPattern);
+    });
+  } catch (e) {
+    console.error("Lỗi đăng ký phím tắt F8:", e);
+  }
+
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+app.on("will-quit", () => {
+  try {
+    globalShortcut.unregisterAll();
+  } catch {}
+  stopMouseSync();
 });
 
 app.on("window-all-closed", () => {
