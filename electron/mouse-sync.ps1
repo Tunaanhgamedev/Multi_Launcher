@@ -1,5 +1,6 @@
 param(
-  [string]$pattern = 'Chrome|Edge|CocCoc|browser'
+  [string]$pattern = 'Chrome|Edge|CocCoc|browser',
+  [int]$launcherPid = 0
 )
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -28,7 +29,7 @@ public class MouseSyncService {
   public const uint MOUSEEVENTF_RIGHTUP = 0x0010;
   public const uint MOUSEEVENTF_WHEEL = 0x0800;
 
-  public static readonly IntPtr SYNC_MAGIC = (IntPtr)0x594E43; // 'SYNC' in hex
+  public const long SYNC_MAGIC = 0x594E43; // 'SYNC'
 
   public delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
   public static LowLevelMouseProc _proc = HookCallback;
@@ -58,8 +59,30 @@ public class MouseSyncService {
   [DllImport("user32.dll")]
   public static extern bool IsWindowVisible(IntPtr hWnd);
 
+  [DllImport("user32.dll")]
+  public static extern bool IsIconic(IntPtr hWnd);
+
+  [DllImport("user32.dll")]
+  public static extern bool IsWindow(IntPtr hWnd);
+
   [DllImport("user32.dll", CharSet = CharSet.Unicode)]
   public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
+
+  [DllImport("user32.dll")]
+  public static extern IntPtr WindowFromPoint(POINT Point);
+
+  [DllImport("user32.dll")]
+  public static extern IntPtr GetAncestor(IntPtr hwnd, uint gaFlags);
+  public const uint GA_ROOT = 2;
+
+  [DllImport("user32.dll")]
+  public static extern IntPtr GetForegroundWindow();
+
+  [DllImport("user32.dll")]
+  public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+  [DllImport("user32.dll")]
+  public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
   public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
   [DllImport("user32.dll")]
@@ -92,42 +115,64 @@ public class MouseSyncService {
 
   public static List<IntPtr> TrackedHwnds = new List<IntPtr>();
   public static string TargetPattern = "";
+  public static uint LauncherPid = 0;
   private static bool _isSyncing = false;
-  private static long _lastRefreshTime = 0;
+
+  public static bool IsMultiLauncher(IntPtr hWnd) {
+    if (hWnd == IntPtr.Zero) return false;
+    try {
+      uint pid = 0;
+      GetWindowThreadProcessId(hWnd, out pid);
+      if (LauncherPid != 0 && pid == LauncherPid) return true;
+
+      if (pid != 0) {
+        Process p = Process.GetProcessById((int)pid);
+        string name = p.ProcessName.ToLowerInvariant();
+        if (name.Contains("multi launcher") || name.Contains("electron")) return true;
+      }
+    } catch {}
+
+    StringBuilder sb = new StringBuilder(512);
+    GetWindowText(hWnd, sb, sb.Capacity);
+    string title = sb.ToString();
+    if (!string.IsNullOrEmpty(title) && title.IndexOf("Multi Launcher", StringComparison.OrdinalIgnoreCase) >= 0) {
+      return true;
+    }
+    return false;
+  }
 
   public static void RefreshWindows() {
     List<IntPtr> list = new List<IntPtr>();
     EnumWindows((hWnd, lParam) => {
-      if (IsWindowVisible(hWnd)) {
-        StringBuilder sb = new StringBuilder(512);
-        GetWindowText(hWnd, sb, sb.Capacity);
-        string title = sb.ToString();
-        if (!string.IsNullOrEmpty(title) &&
-            !title.Contains("Multi Launcher") &&
-            title != "Program Manager") {
-          bool isMatch = false;
-          try {
-            isMatch = string.IsNullOrEmpty(TargetPattern) || TargetPattern == ".*" ||
-                      Regex.IsMatch(title, TargetPattern, RegexOptions.IgnoreCase);
-          } catch {
-            isMatch = true;
-          }
-          if (isMatch) {
-            RECT r;
-            if (GetWindowRect(hWnd, out r) && r.Width > 120 && r.Height > 100) {
-              list.Add(hWnd);
-            }
+      if (!IsWindow(hWnd) || !IsWindowVisible(hWnd) || IsIconic(hWnd)) return true;
+      if (IsMultiLauncher(hWnd)) return true;
+
+      StringBuilder sb = new StringBuilder(512);
+      GetWindowText(hWnd, sb, sb.Capacity);
+      string title = sb.ToString();
+      if (!string.IsNullOrEmpty(title) && title != "Program Manager") {
+        bool isMatch = false;
+        try {
+          isMatch = string.IsNullOrEmpty(TargetPattern) || TargetPattern == ".*" ||
+                    Regex.IsMatch(title, TargetPattern, RegexOptions.IgnoreCase);
+        } catch {
+          isMatch = false;
+        }
+        if (isMatch) {
+          RECT r;
+          if (GetWindowRect(hWnd, out r) && r.Width > 120 && r.Height > 100) {
+            list.Add(hWnd);
           }
         }
       }
       return true;
     }, IntPtr.Zero);
     TrackedHwnds = list;
-    _lastRefreshTime = Stopwatch.GetTimestamp();
   }
 
-  public static int StartHook(string pattern) {
+  public static int StartHook(string pattern, uint lPid) {
     TargetPattern = pattern;
+    LauncherPid = lPid;
     RefreshWindows();
     using (Process curProcess = Process.GetCurrentProcess())
     using (ProcessModule curModule = curProcess.MainModule) {
@@ -148,7 +193,7 @@ public class MouseSyncService {
       MSLLHOOKSTRUCT hookStruct = (MSLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(MSLLHOOKSTRUCT));
 
       // Không lặp lại các sự kiện do chính tiến trình đồng bộ phát sinh
-      if (hookStruct.dwExtraInfo == SYNC_MAGIC) {
+      if (hookStruct.dwExtraInfo.ToInt64() == SYNC_MAGIC) {
         return CallNextHookEx(_hookID, nCode, wParam, lParam);
       }
 
@@ -157,59 +202,79 @@ public class MouseSyncService {
           msg == WM_RBUTTONDOWN || msg == WM_RBUTTONUP ||
           msg == WM_MOUSEWHEEL) {
 
-        int px = hookStruct.pt.x;
-        int py = hookStruct.pt.y;
+        POINT pt = hookStruct.pt;
 
-        // Làm mới danh sách cửa sổ mỗi 3 giây hoặc khi danh sách trống
-        long now = Stopwatch.GetTimestamp();
-        if (TrackedHwnds.Count == 0 || (now - _lastRefreshTime) / (double)Stopwatch.Frequency > 3.0) {
-          RefreshWindows();
+        // 1. Kiểm tra nếu con trỏ đang ở trong app Multi Launcher hoặc Multi Launcher đang là Foreground:
+        // TUYỆT ĐỐI KHÔNG can thiệp, bỏ qua ngay lập tức để người dùng thao tác trong app bình thường!
+        IntPtr wndUnder = WindowFromPoint(pt);
+        IntPtr rootUnder = GetAncestor(wndUnder, GA_ROOT);
+        if (rootUnder == IntPtr.Zero) rootUnder = wndUnder;
+
+        IntPtr fgWnd = GetForegroundWindow();
+
+        if (IsMultiLauncher(rootUnder) || IsMultiLauncher(fgWnd)) {
+          return CallNextHookEx(_hookID, nCode, wParam, lParam);
         }
 
-        IntPtr masterHwnd = IntPtr.Zero;
-        RECT masterRect = new RECT();
+        // Cần ít nhất 2 cửa sổ để có thể đồng bộ
+        if (TrackedHwnds.Count < 2) {
+          return CallNextHookEx(_hookID, nCode, wParam, lParam);
+        }
 
-        foreach (IntPtr h in TrackedHwnds) {
-          RECT r;
-          if (IsWindowVisible(h) && GetWindowRect(h, out r)) {
-            if (r.Contains(px, py)) {
+        // 2. Kiểm tra xem người dùng có click vào 1 trong các cửa sổ đang được theo dõi (TrackedHwnds) không?
+        IntPtr masterHwnd = IntPtr.Zero;
+        if (TrackedHwnds.Contains(rootUnder)) {
+          masterHwnd = rootUnder;
+        } else {
+          foreach (IntPtr h in TrackedHwnds) {
+            if (h == rootUnder) {
               masterHwnd = h;
-              masterRect = r;
               break;
             }
           }
         }
 
-        // Nếu click xảy ra trong một cửa sổ thuộc danh sách, nhân bản sang tất cả các cửa sổ khác
-        if (masterHwnd != IntPtr.Zero && masterRect.Width > 0 && masterRect.Height > 0) {
-          double relX = (double)(px - masterRect.Left) / masterRect.Width;
-          double relY = (double)(py - masterRect.Top) / masterRect.Height;
+        // Nếu click ngoài các cửa sổ đích (ví dụ click Start menu, Taskbar, desktop, app khác): bỏ qua
+        if (masterHwnd == IntPtr.Zero) {
+          return CallNextHookEx(_hookID, nCode, wParam, lParam);
+        }
 
-          uint eventFlags = 0;
-          if (msg == WM_LBUTTONDOWN) eventFlags = MOUSEEVENTF_LEFTDOWN;
-          else if (msg == WM_LBUTTONUP) eventFlags = MOUSEEVENTF_LEFTUP;
-          else if (msg == WM_RBUTTONDOWN) eventFlags = MOUSEEVENTF_RIGHTDOWN;
-          else if (msg == WM_RBUTTONUP) eventFlags = MOUSEEVENTF_RIGHTUP;
-          else if (msg == WM_MOUSEWHEEL) eventFlags = MOUSEEVENTF_WHEEL;
+        RECT masterRect;
+        if (!IsWindow(masterHwnd) || !IsWindowVisible(masterHwnd) || IsIconic(masterHwnd) ||
+            !GetWindowRect(masterHwnd, out masterRect) ||
+            masterRect.Width <= 0 || masterRect.Height <= 0) {
+          return CallNextHookEx(_hookID, nCode, wParam, lParam);
+        }
 
-          _isSyncing = true;
-          try {
-            foreach (IntPtr slaveHwnd in TrackedHwnds) {
-              if (slaveHwnd == masterHwnd) continue;
+        double relX = (double)(pt.x - masterRect.Left) / masterRect.Width;
+        double relY = (double)(pt.y - masterRect.Top) / masterRect.Height;
 
-              RECT slaveRect;
-              if (IsWindowVisible(slaveHwnd) && GetWindowRect(slaveHwnd, out slaveRect)) {
-                int slaveX = slaveRect.Left + (int)(relX * slaveRect.Width);
-                int slaveY = slaveRect.Top + (int)(relY * slaveRect.Height);
+        uint eventFlags = 0;
+        if (msg == WM_LBUTTONDOWN) eventFlags = MOUSEEVENTF_LEFTDOWN;
+        else if (msg == WM_LBUTTONUP) eventFlags = MOUSEEVENTF_LEFTUP;
+        else if (msg == WM_RBUTTONDOWN) eventFlags = MOUSEEVENTF_RIGHTDOWN;
+        else if (msg == WM_RBUTTONUP) eventFlags = MOUSEEVENTF_RIGHTUP;
+        else if (msg == WM_MOUSEWHEEL) eventFlags = MOUSEEVENTF_WHEEL;
 
-                SetCursorPos(slaveX, slaveY);
-                mouse_event(eventFlags, 0, 0, hookStruct.mouseData, (UIntPtr)0x594E43);
-              }
+        _isSyncing = true;
+        try {
+          foreach (IntPtr slaveHwnd in TrackedHwnds) {
+            if (slaveHwnd == masterHwnd) continue;
+            if (!IsWindow(slaveHwnd) || !IsWindowVisible(slaveHwnd) || IsIconic(slaveHwnd)) continue;
+
+            RECT slaveRect;
+            if (GetWindowRect(slaveHwnd, out slaveRect) && slaveRect.Width > 0 && slaveRect.Height > 0) {
+              int slaveX = slaveRect.Left + (int)(relX * slaveRect.Width);
+              int slaveY = slaveRect.Top + (int)(relY * slaveRect.Height);
+
+              SetCursorPos(slaveX, slaveY);
+              mouse_event(eventFlags, 0, 0, hookStruct.mouseData, (UIntPtr)SYNC_MAGIC);
             }
-          } finally {
-            SetCursorPos(px, py);
-            _isSyncing = false;
           }
+        } finally {
+          SetCursorPos(pt.x, pt.y);
+          SetForegroundWindow(masterHwnd);
+          _isSyncing = false;
         }
       }
     }
@@ -220,12 +285,21 @@ public class MouseSyncService {
 
 Add-Type -TypeDefinition $code -ReferencedAssemblies System.Windows.Forms
 
-$count = [MouseSyncService]::StartHook($pattern)
+$count = [MouseSyncService]::StartHook($pattern, [uint32]$launcherPid)
 Write-Output "READY: $count"
+
+$timer = New-Object System.Windows.Forms.Timer
+$timer.Interval = 2000
+$timer.add_Tick({
+  [MouseSyncService]::RefreshWindows()
+})
+$timer.Start()
 
 try {
   [System.Windows.Forms.Application]::Run()
 } finally {
+  $timer.Stop()
+  $timer.Dispose()
   [MouseSyncService]::StopHook()
   Write-Output "STOPPED"
 }

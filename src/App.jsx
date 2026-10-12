@@ -8,6 +8,7 @@ export default function App() {
   const [apps, setApps] = useState([]);
   const [selectedAppIds, setSelectedAppIds] = useState(new Set());
   const [targetAppId, setTargetAppId] = useState("");
+  const currentTargetApp = useMemo(() => apps.find((a) => a.id === targetAppId), [apps, targetAppId]);
   const [categoryFilter, setCategoryFilter] = useState("all");
   
   // Cấu hình mở
@@ -182,9 +183,15 @@ export default function App() {
   async function handleToggleSync() {
     setError("");
     try {
+      const defaultPattern = "Chrome|Edge|CocCoc|Brave|Firefox";
+      const selectedNames = apps
+        .filter((a) => selectedAppIds.has(a.id))
+        .map((a) => a.windowPattern || a.name)
+        .filter(Boolean);
       const targetPattern = workflow === "single"
-        ? (currentTargetApp?.windowPattern || currentTargetApp?.name || "Chrome")
-        : (apps.filter((a) => selectedAppIds.has(a.id)).map((a) => a.windowPattern || a.name).join("|") || ".*");
+        ? (currentTargetApp?.windowPattern || currentTargetApp?.name || defaultPattern)
+        : (selectedNames.length ? selectedNames.join("|") : defaultPattern);
+
       const res = await window.launcher.toggleMouseSync(targetPattern);
       setSyncActive(res.active);
     } catch (e) {
@@ -197,9 +204,15 @@ export default function App() {
     setError("");
     setStatus("Đang căn chỉnh các cửa sổ vừa khít màn hình...");
     try {
+      const defaultPattern = "Chrome|Edge|CocCoc|Brave|Firefox";
+      const selectedNames = apps
+        .filter((a) => selectedAppIds.has(a.id))
+        .map((a) => a.windowPattern || a.name)
+        .filter(Boolean);
       const targetPattern = workflow === "single"
-        ? (currentTargetApp?.windowPattern || currentTargetApp?.name || "Chrome")
-        : (apps.filter((a) => selectedAppIds.has(a.id)).map((a) => a.windowPattern || a.name).join("|") || ".*");
+        ? (currentTargetApp?.windowPattern || currentTargetApp?.name || defaultPattern)
+        : (selectedNames.length ? selectedNames.join("|") : defaultPattern);
+
       const res = await window.launcher.arrangeWindows(targetPattern);
       if (res.arranged) {
         setStatus(res.message || "Đã căn chỉnh các cửa sổ thành công.");
@@ -276,7 +289,6 @@ export default function App() {
   }
 
   const selectedCount = selectedAppIds.size;
-  const currentTargetApp = apps.find((a) => a.id === targetAppId);
   const percent = progress.total ? Math.min(100, Math.round((progress.opened / progress.total) * 100)) : 0;
   const availableCount = apps.filter((a) => a.available).length;
 

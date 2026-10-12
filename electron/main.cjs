@@ -552,11 +552,22 @@ function startMouseSync(pattern) {
 
   mouseSyncPattern = pattern || mouseSyncPattern || "Chrome|Edge|CocCoc|browser";
   const scriptPath = path.join(__dirname, "mouse-sync.ps1");
+  const launcherPid = process.pid;
 
   try {
     mouseSyncProcess = spawn(
       "powershell.exe",
-      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath, "-pattern", mouseSyncPattern],
+      [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        scriptPath,
+        "-pattern",
+        mouseSyncPattern,
+        "-launcherPid",
+        String(launcherPid)
+      ],
       { windowsHide: true }
     );
 
@@ -567,7 +578,12 @@ function startMouseSync(pattern) {
       const match = text.match(/READY:\s*(\d+)/i);
       if (match) {
         const count = parseInt(match[1], 10);
-        sendSyncStatus({ active: true, count, message: `Đang đồng bộ ${count} cửa sổ (Bấm F8 để Bật/Tắt)` });
+        const msg = count >= 2
+          ? `Đang đồng bộ ${count} cửa sổ (Bấm F8 để Bật/Tắt). Bạn có thể thao tác bình thường trong app này mà không bị ảnh hưởng.`
+          : count === 1
+          ? `Đã bật đồng bộ nhưng mới tìm thấy 1 cửa sổ (cần tối thiểu 2 cửa sổ để đồng bộ chuột)`
+          : `Đã bật đồng bộ nhưng chưa phát hiện cửa sổ mục tiêu nào đang mở`;
+        sendSyncStatus({ active: true, count, message: msg });
       }
     });
 
