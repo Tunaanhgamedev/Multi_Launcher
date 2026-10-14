@@ -1,22 +1,67 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 
 const DEFAULT_URLS = "https://www.google.com";
 const STORAGE_KEY_CUSTOM_APPS = "multi_launcher_custom_apps";
+const STORAGE_KEY_PRESETS = "multi_launcher_saved_presets";
+
+const BUILTIN_PRESETS = [
+  {
+    id: "work",
+    name: "💼 Không gian làm việc",
+    desc: "Mở cùng lúc Chrome, VS Code, Notepad & Zalo",
+    workflow: "multi",
+    appIds: ["chrome", "vscode", "notepad", "zalo"],
+    mode: "windows",
+    grid: true,
+    urls: "https://mail.google.com\nhttps://github.com"
+  },
+  {
+    id: "quad-browsers",
+    name: "🌐 4 Cửa sổ chia góc",
+    desc: "4 cửa sổ trình duyệt tự chia đều 4 góc màn hình",
+    workflow: "single",
+    targetId: "chrome",
+    count: 4,
+    mode: "windows",
+    grid: true,
+    profileMode: "normal",
+    urls: "https://www.google.com\nhttps://www.youtube.com\nhttps://github.com\nhttps://reddit.com"
+  },
+  {
+    id: "mmo-isolated",
+    name: "🎮 Đa tài khoản độc lập (MMO/Profile)",
+    desc: "4 cửa sổ Chrome với Profile & Cookie tách biệt hoàn toàn",
+    workflow: "single",
+    targetId: "chrome",
+    count: 4,
+    mode: "windows",
+    grid: true,
+    profileMode: "isolated",
+    urls: "https://www.google.com"
+  }
+];
 
 export default function App() {
-  const [workflow, setWorkflow] = useState("multi"); // "multi": Mở tổ hợp nhiều app, "single": Mở hàng loạt 1 app
+  const [workflow, setWorkflow] = useState("multi"); // "multi": Tổ hợp nhiều app, "single": Hàng loạt 1 app
   const [apps, setApps] = useState([]);
   const [selectedAppIds, setSelectedAppIds] = useState(new Set());
   const [targetAppId, setTargetAppId] = useState("");
   const currentTargetApp = useMemo(() => apps.find((a) => a.id === targetAppId), [apps, targetAppId]);
-  const [categoryFilter, setCategoryFilter] = useState("all");
   
+  // Bộ lọc & Tìm kiếm
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+
   // Cấu hình mở
-  const [mode, setMode] = useState("windows"); // Mặc định mở nhiều Cửa sổ riêng
-  const [count, setCount] = useState(5);
+  const [mode, setMode] = useState("windows"); // 'windows' | 'tabs'
+  const [count, setCount] = useState(4);
   const [delayMs, setDelayMs] = useState(1000);
   const [urls, setUrls] = useState(DEFAULT_URLS);
-  const [grid, setGrid] = useState(true); // Mặc định tự động dàn cửa sổ vừa khít màn hình
+  const [grid, setGrid] = useState(true);
+  const [profileMode, setProfileMode] = useState("normal"); // 'normal' | 'incognito' | 'isolated'
+
+  // Ghim cửa sổ Always on Top
+  const [alwaysOnTop, setAlwaysOnTop] = useState(false);
 
   // Đồng bộ chuột
   const [syncActive, setSyncActive] = useState(false);
@@ -24,47 +69,69 @@ export default function App() {
 
   // Tiến trình & Trạng thái
   const [running, setRunning] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [status, setStatus] = useState("Sẵn sàng. Hãy chọn ứng dụng và nhấn bắt đầu.");
   const [progress, setProgress] = useState({ opened: 0, total: 0 });
   const [error, setError] = useState("");
 
   // Tải danh sách ứng dụng đã cài đặt và ứng dụng tùy chọn
-  useEffect(() => {
-    async function loadApps() {
-      try {
-        const detected = await window.launcher.getDetectedApps();
-        const savedCustomRaw = localStorage.getItem(STORAGE_KEY_CUSTOM_APPS);
-        let customApps = [];
-        if (savedCustomRaw) {
-          try {
-            customApps = JSON.parse(savedCustomRaw);
-          } catch {
-            customApps = [];
-          }
+  const loadApps = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    try {
+      const detected = isRefresh && window.launcher.refreshApps
+        ? await window.launcher.refreshApps()
+        : await window.launcher.getDetectedApps();
+
+      const savedCustomRaw = localStorage.getItem(STORAGE_KEY_CUSTOM_APPS);
+      let customApps = [];
+      if (savedCustomRaw) {
+        try {
+          customApps = JSON.parse(savedCustomRaw);
+        } catch {
+          customApps = [];
         }
+      }
 
-        const combined = [...detected, ...customApps];
-        setApps(combined);
+      const combined = [...detected, ...customApps];
+      setApps(combined);
 
-        // Mặc định chọn app khả dụng đầu tiên cho chế độ Single
+      // Nếu chưa có targetAppId, chọn app khả dụng đầu tiên
+      setTargetAppId((prev) => {
+        if (prev) return prev;
         const firstAvailable = combined.find((a) => a.available);
-        if (firstAvailable) {
-          setTargetAppId(firstAvailable.id);
-        }
+        return firstAvailable ? firstAvailable.id : "";
+      });
 
-        // Mặc định chọn 2-3 app phổ biến có sẵn cho chế độ Multi
+      // Nếu selectedAppIds rỗng, chọn mặc định
+      setSelectedAppIds((prev) => {
+        if (prev && prev.size > 0) return prev;
         const defaultMulti = combined.filter((a) => a.available && ["chrome", "edge", "coccoc", "vscode", "notepad"].includes(a.id));
         if (defaultMulti.length > 0) {
-          setSelectedAppIds(new Set(defaultMulti.map((a) => a.id)));
-        } else if (firstAvailable) {
-          setSelectedAppIds(new Set([firstAvailable.id]));
+          return new Set(defaultMulti.map((a) => a.id));
         }
-      } catch (err) {
-        setError("Không thể tải danh sách ứng dụng: " + err.message);
-      }
-    }
+        const firstAvail = combined.find((a) => a.available);
+        return firstAvail ? new Set([firstAvail.id]) : new Set();
+      });
 
-    loadApps();
+      if (isRefresh) {
+        setStatus(`Đã làm mới: Nhận diện thành công ${combined.filter((a) => a.available).length} ứng dụng.`);
+      }
+    } catch (err) {
+      setError("Không thể tải danh sách ứng dụng: " + err.message);
+    } finally {
+      if (isRefresh) setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadApps(false);
+
+    // Khởi tạo trạng thái Always on Top
+    if (window.launcher.getAlwaysOnTop) {
+      window.launcher.getAlwaysOnTop().then((res) => {
+        if (res && res.alwaysOnTop) setAlwaysOnTop(true);
+      });
+    }
 
     // Khởi tạo trạng thái đồng bộ chuột ban đầu
     if (window.launcher.getMouseSyncStatus) {
@@ -96,18 +163,69 @@ export default function App() {
       unsubProgress();
       unsubSync();
     };
-  }, []);
+  }, [loadApps]);
 
-  // Lọc danh mục ứng dụng
+  // Lắng nghe phím tắt Escape để dừng nếu đang chạy
+  useEffect(() => {
+    if (!running) return;
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        handleStop();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [running]);
+
+  // Cập nhật targetPattern cho backend mỗi khi chọn ứng dụng
+  useEffect(() => {
+    const defaultPattern = "Chrome|Edge|CocCoc|Brave|Firefox";
+    const selectedNames = apps
+      .filter((a) => selectedAppIds.has(a.id))
+      .map((a) => a.windowPattern || a.name)
+      .filter(Boolean);
+    const pattern = workflow === "single"
+      ? (currentTargetApp?.windowPattern || currentTargetApp?.name || defaultPattern)
+      : (selectedNames.length ? selectedNames.join("|") : defaultPattern);
+
+    if (window.launcher.setMouseSyncPattern) {
+      window.launcher.setMouseSyncPattern(pattern);
+    }
+  }, [workflow, targetAppId, selectedAppIds, apps, currentTargetApp]);
+
+  // Lọc danh mục & tìm kiếm ứng dụng
   const filteredApps = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
     return apps.filter((app) => {
-      if (categoryFilter === "available") return app.available;
-      if (categoryFilter === "browser") return app.type === "browser";
-      if (categoryFilter === "custom") return app.isCustom;
-      if (categoryFilter === "system") return !app.isCustom && app.type !== "browser";
-      return true;
+      const matchCat =
+        categoryFilter === "all" ? true :
+        categoryFilter === "available" ? app.available :
+        categoryFilter === "browser" ? app.type === "browser" :
+        categoryFilter === "custom" ? app.isCustom :
+        categoryFilter === "system" ? !app.isCustom && app.type !== "browser" : true;
+
+      if (!matchCat) return false;
+      if (!query) return true;
+      return (
+        app.name.toLowerCase().includes(query) ||
+        (app.category && app.category.toLowerCase().includes(query)) ||
+        (app.path && app.path.toLowerCase().includes(query))
+      );
     });
-  }, [apps, categoryFilter]);
+  }, [apps, categoryFilter, searchQuery]);
+
+  // Bật / Tắt Ghim trên cùng
+  async function handleToggleAlwaysOnTop() {
+    try {
+      const res = await window.launcher.toggleAlwaysOnTop();
+      setAlwaysOnTop(res.alwaysOnTop);
+      setStatus(res.alwaysOnTop ? "📌 Đã ghim cửa sổ Multi Launcher luôn hiển thị trên cùng." : "Đã bỏ ghim cửa sổ.");
+    } catch (e) {
+      setError("Không thể chuyển đổi ghim cửa sổ: " + e.message);
+    }
+  }
 
   // Thêm ứng dụng tùy chọn từ máy
   async function handleBrowseApp() {
@@ -120,11 +238,9 @@ export default function App() {
       const updatedApps = [...apps.filter((a) => a.path !== newApp.path), newApp];
       setApps(updatedApps);
 
-      // Lưu các custom app vào localStorage
       const customOnly = updatedApps.filter((a) => a.isCustom);
       localStorage.setItem(STORAGE_KEY_CUSTOM_APPS, JSON.stringify(customOnly));
 
-      // Tự động chọn app vừa thêm
       if (workflow === "single") {
         setTargetAppId(newApp.id);
       } else {
@@ -157,15 +273,12 @@ export default function App() {
     }
   }
 
-  // Chuyển đổi chọn app trong chế độ Multi
+  // Chọn/bỏ chọn app trong chế độ Multi
   function toggleAppSelection(appId) {
     setSelectedAppIds((prev) => {
       const next = new Set(prev);
-      if (next.has(appId)) {
-        next.delete(appId);
-      } else {
-        next.add(appId);
-      }
+      if (next.has(appId)) next.delete(appId);
+      else next.add(appId);
       return next;
     });
   }
@@ -224,6 +337,26 @@ export default function App() {
     }
   }
 
+  // Áp dụng Preset
+  function applyPreset(p) {
+    setError("");
+    setWorkflow(p.workflow);
+    if (p.mode) setMode(p.mode);
+    if (p.grid !== undefined) setGrid(p.grid);
+    if (p.urls) setUrls(p.urls);
+    if (p.count) setCount(p.count);
+    if (p.profileMode) setProfileMode(p.profileMode);
+
+    if (p.workflow === "single" && p.targetId) {
+      const found = apps.find((a) => a.id === p.targetId && a.available) || apps.find((a) => a.available);
+      if (found) setTargetAppId(found.id);
+    } else if (p.workflow === "multi" && p.appIds) {
+      const validIds = p.appIds.filter((id) => apps.some((a) => a.id === id && a.available));
+      if (validIds.length) setSelectedAppIds(new Set(validIds));
+    }
+    setStatus(`Đã tải kịch bản: ${p.name}`);
+  }
+
   // Bắt đầu khởi chạy
   async function handleStart() {
     setError("");
@@ -246,7 +379,8 @@ export default function App() {
         delayMs,
         urls,
         browserMode: mode,
-        grid
+        grid,
+        profileMode
       });
 
       if (!result.ok) {
@@ -272,7 +406,8 @@ export default function App() {
         delayMs,
         urls,
         mode,
-        grid
+        grid,
+        profileMode
       });
 
       if (!result.ok) {
@@ -291,6 +426,7 @@ export default function App() {
   const selectedCount = selectedAppIds.size;
   const percent = progress.total ? Math.min(100, Math.round((progress.opened / progress.total) * 100)) : 0;
   const availableCount = apps.filter((a) => a.available).length;
+  const isTargetBrowser = currentTargetApp?.type === "browser";
 
   return (
     <main className="shell">
@@ -298,19 +434,52 @@ export default function App() {
       <header className="topbar">
         <div className="brand-icon">ML</div>
         <div>
-          <p className="eyebrow">WINDOWS MULTI-APP LAUNCHER</p>
+          <p className="eyebrow">WINDOWS MULTI-APP LAUNCHER PRO</p>
           <h1>Multi Launcher</h1>
-          <p className="subtitle">Khởi chạy đa ứng dụng, tự chia màn hình & đồng bộ thao tác chuột</p>
+          <p className="subtitle">Khởi chạy đa ứng dụng • Tự chia lưới màn hình • Đồng bộ chuột F8</p>
         </div>
         <div className="topbar-pills">
-          <span className={`pill ${syncActive ? "pill-active" : ""}`} onClick={handleToggleSync} style={{ cursor: "pointer" }} title="Bấm để Bật/Tắt nhanh đồng bộ chuột (Phím tắt: F8)">
-            {syncActive ? "🟢 Đang đồng bộ chuột (F8)" : "⚪ Chuột độc lập (F8)"}
+          <button
+            type="button"
+            className={`pill pin-pill ${alwaysOnTop ? "pin-active" : ""}`}
+            onClick={handleToggleAlwaysOnTop}
+            title="Ghim cửa sổ Multi Launcher luôn hiển thị trên cùng để dễ điều khiển"
+          >
+            {alwaysOnTop ? "📌 Đã ghim trên cùng" : "📍 Ghim trên cùng"}
+          </button>
+
+          <span
+            className={`pill ${syncActive ? "pill-active" : ""}`}
+            onClick={handleToggleSync}
+            style={{ cursor: "pointer" }}
+            title="Bấm để Bật/Tắt nhanh đồng bộ chuột (Phím tắt: F8)"
+          >
+            {syncActive ? `🟢 Đang đồng bộ chuột (${syncCount} tab)` : "⚪ Chuột độc lập (F8)"}
           </span>
-          <span className="pill ok">
-            Đã nhận diện: {availableCount} ứng dụng
+
+          <span className="pill ok" title="Số lượng ứng dụng đã được tự động phát hiện trên máy tính">
+            {availableCount} ứng dụng sẵn sàng
           </span>
         </div>
       </header>
+
+      {/* Kịch bản mẫu (Presets) */}
+      <section className="presets-bar">
+        <span className="preset-label">⚡ Kịch bản nhanh:</span>
+        <div className="preset-chips">
+          {BUILTIN_PRESETS.map((p) => (
+            <button
+              key={p.id}
+              className="preset-btn"
+              onClick={() => applyPreset(p)}
+              disabled={running}
+              title={p.desc}
+            >
+              {p.name}
+            </button>
+          ))}
+        </div>
+      </section>
 
       {/* Bước 1: Chọn Chế độ hoạt động */}
       <section className="panel">
@@ -331,7 +500,7 @@ export default function App() {
             <span className="workflow-icon">⊞</span>
             <div>
               <strong>Mở tổ hợp nhiều ứng dụng (Workspace)</strong>
-              <small>Tích chọn nhiều phần mềm khác nhau (Chrome, Edge, VS Code, Notepad...) và mở cùng lúc chỉ với 1 click.</small>
+              <small>Tích chọn nhiều phần mềm khác nhau (Chrome, Edge, VS Code, Zalo, Notepad...) và mở cùng lúc chỉ với 1 click.</small>
             </div>
           </button>
 
@@ -343,7 +512,7 @@ export default function App() {
             <span className="workflow-icon">▤</span>
             <div>
               <strong>Mở hàng loạt 1 ứng dụng (Batch / URLs)</strong>
-              <small>Mở nhiều cửa sổ hoặc tab của một ứng dụng duy nhất kèm danh sách URL hoặc tham số.</small>
+              <small>Nhân bản nhiều cửa sổ hoặc tab của một ứng dụng duy nhất kèm danh sách URL và đồng bộ thao tác.</small>
             </div>
           </button>
         </div>
@@ -362,92 +531,123 @@ export default function App() {
           </div>
 
           <div className="app-actions-top">
+            <button
+              className="refresh-btn"
+              onClick={() => loadApps(true)}
+              disabled={running || refreshing}
+              title="Quét lại toàn bộ các ứng dụng đã cài đặt trên máy"
+            >
+              {refreshing ? "Đang quét..." : "🔄 Quét lại app"}
+            </button>
             <button className="browse-btn" onClick={handleBrowseApp} disabled={running}>
               + Chọn file .exe từ máy
             </button>
           </div>
         </div>
 
-        {/* Bộ lọc danh mục */}
-        <div className="filter-bar">
-          <div className="filter-chips">
-            <button className={`chip ${categoryFilter === "all" ? "active" : ""}`} onClick={() => setCategoryFilter("all")}>Tất cả ({apps.length})</button>
-            <button className={`chip ${categoryFilter === "available" ? "active" : ""}`} onClick={() => setCategoryFilter("available")}>Có sẵn ({availableCount})</button>
-            <button className={`chip ${categoryFilter === "browser" ? "active" : ""}`} onClick={() => setCategoryFilter("browser")}>Trình duyệt</button>
-            <button className={`chip ${categoryFilter === "system" ? "active" : ""}`} onClick={() => setCategoryFilter("system")}>Phần mềm máy</button>
-            <button className={`chip ${categoryFilter === "custom" ? "active" : ""}`} onClick={() => setCategoryFilter("custom")}>Tự thêm</button>
+        {/* Thanh tìm kiếm và Bộ lọc */}
+        <div className="search-and-filter">
+          <div className="search-box">
+            <span className="search-icon">🔍</span>
+            <input
+              type="text"
+              placeholder="Tìm kiếm ứng dụng (ví dụ: Chrome, Code, Zalo, Excel)..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              disabled={running}
+            />
+            {searchQuery && (
+              <button className="clear-search" onClick={() => setSearchQuery("")}>✕</button>
+            )}
           </div>
 
-          {workflow === "multi" && (
-            <div className="selection-quick">
-              <button onClick={handleSelectAll} disabled={running}>Chọn tất cả</button>
-              <span>•</span>
-              <button onClick={handleDeselectAll} disabled={running}>Bỏ chọn</button>
+          <div className="filter-bar">
+            <div className="filter-chips">
+              <button className={`chip ${categoryFilter === "all" ? "active" : ""}`} onClick={() => setCategoryFilter("all")}>Tất cả ({apps.length})</button>
+              <button className={`chip ${categoryFilter === "available" ? "active" : ""}`} onClick={() => setCategoryFilter("available")}>Có sẵn ({availableCount})</button>
+              <button className={`chip ${categoryFilter === "browser" ? "active" : ""}`} onClick={() => setCategoryFilter("browser")}>Trình duyệt</button>
+              <button className={`chip ${categoryFilter === "system" ? "active" : ""}`} onClick={() => setCategoryFilter("system")}>Phần mềm máy</button>
+              <button className={`chip ${categoryFilter === "custom" ? "active" : ""}`} onClick={() => setCategoryFilter("custom")}>Tự thêm</button>
             </div>
-          )}
+
+            {workflow === "multi" && (
+              <div className="selection-quick">
+                <button onClick={handleSelectAll} disabled={running}>Chọn tất cả</button>
+                <span>•</span>
+                <button onClick={handleDeselectAll} disabled={running}>Bỏ chọn</button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Lưới danh sách ứng dụng */}
         <div className="apps-grid">
-          {filteredApps.map((appItem) => {
-            const isSelected = workflow === "multi" ? selectedAppIds.has(appItem.id) : targetAppId === appItem.id;
-            return (
-              <div
-                key={appItem.id}
-                className={`app-card ${isSelected ? "selected" : ""} ${!appItem.available ? "unavailable" : ""}`}
-                onClick={() => {
-                  if (!appItem.available || running) return;
-                  if (workflow === "multi") {
-                    toggleAppSelection(appItem.id);
-                  } else {
-                    setTargetAppId(appItem.id);
-                  }
-                }}
-              >
-                <div className="app-card-header">
-                  <span className="app-icon">{appItem.icon || "📦"}</span>
-                  <div className="app-meta">
-                    <strong className="app-title">{appItem.name}</strong>
-                    <span className="app-category">{appItem.category}</span>
+          {filteredApps.length === 0 ? (
+            <div className="empty-apps">
+              <p>Không tìm thấy ứng dụng nào khớp với "{searchQuery}".</p>
+              <button className="browse-btn" onClick={handleBrowseApp}>Chọn file .exe từ máy tính</button>
+            </div>
+          ) : (
+            filteredApps.map((appItem) => {
+              const isSelected = workflow === "multi" ? selectedAppIds.has(appItem.id) : targetAppId === appItem.id;
+              return (
+                <div
+                  key={appItem.id}
+                  className={`app-card ${isSelected ? "selected" : ""} ${!appItem.available ? "unavailable" : ""}`}
+                  onClick={() => {
+                    if (!appItem.available || running) return;
+                    if (workflow === "multi") {
+                      toggleAppSelection(appItem.id);
+                    } else {
+                      setTargetAppId(appItem.id);
+                    }
+                  }}
+                >
+                  <div className="app-card-header">
+                    <span className="app-icon">{appItem.icon || "📦"}</span>
+                    <div className="app-meta">
+                      <strong className="app-title">{appItem.name}</strong>
+                      <span className="app-category">{appItem.category}</span>
+                    </div>
+
+                    {appItem.isCustom && (
+                      <button
+                        className="delete-custom-btn"
+                        title="Xóa ứng dụng này khỏi danh sách"
+                        onClick={(e) => handleDeleteCustomApp(e, appItem.id)}
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
 
-                  {appItem.isCustom && (
-                    <button
-                      className="delete-custom-btn"
-                      title="Xóa ứng dụng này khỏi danh sách"
-                      onClick={(e) => handleDeleteCustomApp(e, appItem.id)}
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
+                  <div className="app-card-footer">
+                    <span className={`status-badge ${appItem.available ? "ready" : "missing"}`}>
+                      {appItem.available ? "Sẵn sàng" : "Chưa cài đặt"}
+                    </span>
 
-                <div className="app-card-footer">
-                  <span className={`status-badge ${appItem.available ? "ready" : "missing"}`}>
-                    {appItem.available ? "Sẵn sàng" : "Chưa cài đặt"}
-                  </span>
-
-                  <span className="card-selector">
-                    {workflow === "multi" ? (
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        disabled={!appItem.available || running}
-                        onChange={() => {}}
-                      />
-                    ) : (
-                      <input
-                        type="radio"
-                        checked={isSelected}
-                        disabled={!appItem.available || running}
-                        onChange={() => {}}
-                      />
-                    )}
-                  </span>
+                    <span className="card-selector">
+                      {workflow === "multi" ? (
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          disabled={!appItem.available || running}
+                          onChange={() => {}}
+                        />
+                      ) : (
+                        <input
+                          type="radio"
+                          checked={isSelected}
+                          disabled={!appItem.available || running}
+                          onChange={() => {}}
+                        />
+                      )}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </section>
 
@@ -458,7 +658,7 @@ export default function App() {
             <span className="step">03</span>
             <h2>Cấu hình & Tùy chọn màn hình</h2>
           </div>
-          <span className="muted">Điều chỉnh cách hiển thị trên màn hình</span>
+          <span className="muted">Điều chỉnh cách hiển thị và phiên làm việc</span>
         </div>
 
         <div className="fields">
@@ -499,6 +699,16 @@ export default function App() {
               <option value="tabs">Nhiều Tab (Chung 1 cửa sổ)</option>
             </select>
           </label>
+
+          {/* Tách biệt Profile độc lập */}
+          <label className="field">
+            <span>Chế độ Profile / Cookie (Trình duyệt)</span>
+            <select value={profileMode} disabled={running} onChange={(e) => setProfileMode(e.target.value)}>
+              <option value="normal">Mặc định (Dùng chung Profile chính)</option>
+              <option value="isolated">⭐ Tách biệt Profile riêng (Mỗi cửa sổ 1 tài khoản/cookie riêng)</option>
+              <option value="incognito">Ẩn danh / Riêng tư (Incognito / InPrivate)</option>
+            </select>
+          </label>
         </div>
 
         {/* Nhập URL hoặc Tham số */}
@@ -522,7 +732,7 @@ export default function App() {
             <span>
               <strong>Tự động sắp xếp vừa khít toàn bộ màn hình (Auto Fit Grid)</strong>
               <small>
-                Thay vì mỗi cửa sổ mở ra đều full màn đè lên nhau, hệ thống sẽ tự tính toán kích thước và chia đều diện tích màn hình để tất cả cửa sổ khớp hoàn toàn với màn hình máy tính (không để lại khoảng trống thừa).
+                Hệ thống tự tính toán kích thước và chia đều diện tích màn hình để tất cả cửa sổ khớp hoàn toàn với màn hình máy tính (không đè lên nhau, không để lại khoảng trống thừa).
               </small>
             </span>
           </label>
@@ -545,12 +755,12 @@ export default function App() {
           <div className="sync-info">
             <strong>
               {syncActive
-                ? "🟢 Tính năng đồng bộ chuột đang BẬT: Thao tác trên 1 tab sẽ lặp lại ở tất cả các tab!"
+                ? `🟢 Tính năng đồng bộ chuột đang BẬT: Đang điều khiển đồng loạt ${syncCount > 0 ? syncCount : "các"} cửa sổ!`
                 : "🔘 Bấm để bật đồng bộ chuột giữa các cửa sổ đã mở"}
             </strong>
             <small>
               {syncActive
-                ? "Bất kỳ thao tác click chuột trái/phải hoặc cuộn trang trên một cửa sổ bất kỳ sẽ ngay lập tức được nhân bản sang toàn bộ các cửa sổ còn lại theo đúng tọa độ màn hình. Bạn có thể nhấn F8 trên bàn phím bất cứ lúc nào để Bật/Tắt tức thì mà không cần chuyển về cửa sổ này."
+                ? "Bất kỳ thao tác click chuột trái, phải, chuột giữa hoặc cuộn trang trên một cửa sổ bất kỳ sẽ ngay lập tức được nhân bản sang toàn bộ các cửa sổ còn lại. Nhấn F8 trên bàn phím bất cứ lúc nào để Bật/Tắt tức thì mà không cần chuyển về cửa sổ này."
                 : "Khi bật, bạn chỉ cần điều khiển chuột trên 1 cửa sổ, các cửa sổ khác sẽ tự động click và cuộn theo y hệt. Phím tắt F8 toàn cục cho phép bật/tắt mọi lúc."}
             </small>
           </div>
@@ -606,7 +816,7 @@ export default function App() {
           </button>
 
           <button className="secondary stop-btn" onClick={handleStop} disabled={!running}>
-            ■ &nbsp; Dừng lại
+            ■ &nbsp; Dừng lại (Esc)
           </button>
         </div>
 
@@ -616,7 +826,7 @@ export default function App() {
       </section>
 
       <footer>
-        Multi Launcher <span>•</span> Electron + React <span>•</span> Quản lý & Khởi chạy đa ứng dụng Windows <span>•</span> Hỗ trợ F8 Mouse Sync
+        Multi Launcher Pro <span>•</span> Electron + React <span>•</span> Quản lý & Khởi chạy đa ứng dụng Windows <span>•</span> Hỗ trợ F8 Mouse Sync & Multi-Profiles
       </footer>
     </main>
   );

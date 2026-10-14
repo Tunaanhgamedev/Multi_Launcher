@@ -102,6 +102,26 @@ h1 {
   border-color: #285943;
 }
 
+.pin-pill {
+  cursor: pointer;
+  background: #141b27;
+  color: #a4b3c9;
+  border-color: #313f54;
+}
+
+.pin-pill:hover {
+  background: #1c2738;
+  color: #ffffff;
+  border-color: #4a5e7c;
+}
+
+.pin-active {
+  background: #282452;
+  color: #d1c7ff;
+  border-color: #7966eb;
+  box-shadow: 0 0 12px #7966eb55;
+}
+
 .pill-active {
   color: #60f5a7;
   background: #133927;
@@ -113,6 +133,48 @@ h1 {
 @keyframes pulse-glow {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.85; transform: scale(0.98); }
+}
+
+/* Kịch bản nhanh (Presets Bar) */
+.presets-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  background: #101520;
+  border: 1px solid #252f40;
+  border-radius: 12px;
+  flex-wrap: wrap;
+}
+
+.preset-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #a2b0c4;
+}
+
+.preset-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.preset-btn {
+  border: 1px solid #334055;
+  border-radius: 8px;
+  background: #171f2d;
+  color: #cfd8e8;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 5px 11px;
+}
+
+.preset-btn:hover:not(:disabled) {
+  border-color: #7b6cee;
+  background: #252244;
+  color: #ffffff;
+  transform: translateY(-1px);
 }
 
 .panel {
@@ -213,6 +275,29 @@ h2 {
   line-height: 1.45;
 }
 
+/* App Actions Top */
+.app-actions-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.refresh-btn {
+  border: 1px solid #364459;
+  border-radius: 8px;
+  background: #151d2a;
+  color: #b0c0d6;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 11px;
+}
+
+.refresh-btn:hover:not(:disabled) {
+  background: #1e2b3d;
+  border-color: #556988;
+  color: #ffffff;
+}
+
 /* Nút duyệt ứng dụng */
 .browse-btn {
   border: 1px solid #7563f7;
@@ -230,12 +315,66 @@ h2 {
   color: #ffffff;
 }
 
+/* Tìm kiếm và Bộ lọc */
+.search-and-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.search-icon {
+  position: absolute;
+  left: 11px;
+  font-size: 12px;
+  color: #687991;
+  pointer-events: none;
+}
+
+.search-box input {
+  width: 100%;
+  padding: 8px 34px 8px 32px;
+  background: #0d121a;
+  border: 1px solid #2a3547;
+  border-radius: 8px;
+  color: #e5ebf5;
+  font-size: 11px;
+  outline: none;
+}
+
+.search-box input:focus {
+  border-color: #7a6be8;
+  background: #111722;
+}
+
+.clear-search {
+  position: absolute;
+  right: 10px;
+  background: none;
+  border: none;
+  color: #7a8ba3;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.clear-search:hover {
+  color: #ffffff;
+  background: #2b3547;
+}
+
 /* Thanh bộ lọc ứng dụng */
 .filter-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 14px;
   gap: 12px;
   flex-wrap: wrap;
 }
@@ -287,6 +426,25 @@ h2 {
 
 .selection-quick button:hover:not(:disabled) {
   color: #c9d8ff;
+}
+
+.empty-apps {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 28px 16px;
+  color: #8c9bb0;
+  font-size: 12px;
+  background: #0f141d;
+  border: 1px dashed #2b3547;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.empty-apps p {
+  margin: 0;
 }
 
 /* Lưới ứng dụng */
