@@ -5,6 +5,7 @@ const path = require("node:path");
 
 let mainWindow;
 let activeJob = null;
+let cachedDetectedApps = null;
 
 // Quản lý tiến trình đồng bộ chuột toàn cục
 let mouseSyncProcess = null;
@@ -25,6 +26,7 @@ function getPredefinedApps() {
   const pf = process.env.PROGRAMFILES || "C:\\Program Files";
   const pfx86 = process.env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)";
   const local = process.env.LOCALAPPDATA || "";
+  const appData = process.env.APPDATA || "";
 
   return [
     {
@@ -115,6 +117,41 @@ function getPredefinedApps() {
       windowPattern: "Visual Studio Code"
     },
     {
+      id: "zalo",
+      name: "Zalo Desktop",
+      type: "app",
+      category: "Liên lạc & Chat",
+      icon: "💬",
+      candidates: [
+        path.join(local, "Programs", "Zalo", "Zalo.exe"),
+        path.join(local, "Zalo", "Zalo.exe")
+      ],
+      windowPattern: "Zalo"
+    },
+    {
+      id: "telegram",
+      name: "Telegram Desktop",
+      type: "app",
+      category: "Liên lạc & Chat",
+      icon: "✈️",
+      candidates: [
+        path.join(appData, "Telegram Desktop", "Telegram.exe"),
+        path.join(local, "Programs", "Telegram Desktop", "Telegram.exe")
+      ],
+      windowPattern: "Telegram"
+    },
+    {
+      id: "discord",
+      name: "Discord",
+      type: "app",
+      category: "Liên lạc & Chat",
+      icon: "🎧",
+      candidates: [
+        path.join(local, "Discord", "Update.exe")
+      ],
+      windowPattern: "Discord"
+    },
+    {
       id: "notepad",
       name: "Notepad (Ghi chú)",
       type: "app",
@@ -125,6 +162,18 @@ function getPredefinedApps() {
         path.join(win, "notepad.exe")
       ],
       windowPattern: "Notepad"
+    },
+    {
+      id: "paint",
+      name: "Paint (Vẽ)",
+      type: "app",
+      category: "Tiện ích Windows",
+      icon: "🎨",
+      candidates: [
+        path.join(win, "System32", "mspaint.exe"),
+        path.join(win, "mspaint.exe")
+      ],
+      windowPattern: "Paint"
     },
     {
       id: "calc",
@@ -160,6 +209,17 @@ function getPredefinedApps() {
       windowPattern: "cmd.exe"
     },
     {
+      id: "explorer",
+      name: "File Explorer (Thư mục)",
+      type: "app",
+      category: "Tiện ích Windows",
+      icon: "📁",
+      candidates: [
+        path.join(win, "explorer.exe")
+      ],
+      windowPattern: "File Explorer"
+    },
+    {
       id: "excel",
       name: "Microsoft Excel",
       type: "app",
@@ -182,6 +242,18 @@ function getPredefinedApps() {
         path.join(pfx86, "Microsoft Office", "Root", "Office16", "WINWORD.EXE")
       ],
       windowPattern: "Word"
+    },
+    {
+      id: "powerpoint",
+      name: "Microsoft PowerPoint",
+      type: "app",
+      category: "Văn phòng",
+      icon: "📽️",
+      candidates: [
+        path.join(pf, "Microsoft Office", "Root", "Office16", "POWERPNT.EXE"),
+        path.join(pfx86, "Microsoft Office", "Root", "Office16", "POWERPNT.EXE")
+      ],
+      windowPattern: "PowerPoint"
     }
   ];
 }
@@ -240,7 +312,11 @@ $apps | ConvertTo-Json -Compress
   });
 }
 
-async function getAllDetectedApps() {
+async function getAllDetectedApps(forceRefresh = false) {
+  if (cachedDetectedApps && !forceRefresh) {
+    return cachedDetectedApps;
+  }
+
   const predefined = getPredefinedApps();
   const regApps = await getRegistryApps();
 
@@ -307,13 +383,14 @@ async function getAllDetectedApps() {
     });
   }
 
+  cachedDetectedApps = detected;
   return detected;
 }
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 960,
-    height: 840,
+    width: 980,
+    height: 860,
     minWidth: 720,
     minHeight: 640,
     title: "Multi Launcher",
@@ -442,12 +519,14 @@ async function arrangeWindows(targetPattern = "Chrome") {
   if (process.platform !== "win32") return { arranged: false, count: 0, message: "Sắp xếp lưới chỉ được hỗ trợ trên Windows." };
   const safePattern = String(targetPattern || ".*").replace(/'/g, "''");
   const ps = String.raw`
-param($pat = '${safePattern}')
+Add-Type -AssemblyName System.Windows.Forms
+$pat = '${safePattern}'
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
 using System.Text;
-public class Win32 {
+using System.Text.RegularExpressions;
+public class Win32Grid {
   public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
   [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc cb, IntPtr extra);
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
@@ -457,14 +536,26 @@ public class Win32 {
 }
 "@
 $wins = New-Object System.Collections.Generic.List[System.IntPtr]
-[Win32]::EnumWindows({
+[Win32Grid]::EnumWindows({
   param($h, $l)
-  if ([Win32]::IsWindowVisible($h)) {
+  if ([Win32Grid]::IsWindowVisible($h)) {
     $sb = New-Object System.Text.StringBuilder 512
-    [void][Win32]::GetWindowText($h, $sb, $sb.Capacity)
+    [void][Win32Grid]::GetWindowText($h, $sb, $sb.Capacity)
     $text = $sb.ToString()
-    if ($text -and ($text -notmatch 'Multi Launcher') -and ($text -notmatch '^Program Manager$') -and ($text -match $pat)) {
-      $wins.Add($h)
+    if ($text -and ($text -notmatch 'Multi Launcher') -and ($text -notmatch '^Program Manager$')) {
+      $isMatch = $false
+      try {
+        if (-not $pat -or $pat -eq '.*') {
+          $isMatch = $true
+        } else {
+          $isMatch = [System.Text.RegularExpressions.Regex]::IsMatch($text, $pat, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        }
+      } catch {
+        $isMatch = $text.ToLower().Contains($pat.ToLower())
+      }
+      if ($isMatch) {
+        $wins.Add($h)
+      }
     }
   }
   return $true
@@ -498,8 +589,8 @@ if ($n -gt 0) {
         $x = $screen.Left + ($c * $colW)
         $actualW = if ($c -eq ($countInRow - 1)) { $screen.Width - ($c * $colW) } else { $colW }
         $h = $wins[$idx]
-        [void][Win32]::ShowWindow($h, 9)
-        [void][Win32]::MoveWindow($h, $x, $y, $actualW, $actualH, $true)
+        [void][Win32Grid]::ShowWindow($h, 9)
+        [void][Win32Grid]::MoveWindow($h, $x, $y, $actualW, $actualH, $true)
         $idx++
       }
     }
@@ -510,7 +601,7 @@ Write-Output $wins.Count
   return new Promise((resolve) => {
     const child = spawn(
       "powershell.exe",
-      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "Add-Type -AssemblyName System.Windows.Forms; " + ps],
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
       { windowsHide: true }
     );
     let out = "";
@@ -575,11 +666,14 @@ function startMouseSync(pattern) {
 
     mouseSyncProcess.stdout.on("data", (d) => {
       const text = d.toString();
-      const match = text.match(/READY:\s*(\d+)/i);
+      const readyMatch = text.match(/READY:\s*(\d+)/i);
+      const countMatch = text.match(/COUNT:\s*(\d+)/i);
+      const match = readyMatch || countMatch;
+
       if (match) {
         const count = parseInt(match[1], 10);
         const msg = count >= 2
-          ? `Đang đồng bộ ${count} cửa sổ (Bấm F8 để Bật/Tắt). Bạn có thể thao tác bình thường trong app này mà không bị ảnh hưởng.`
+          ? `Đang đồng bộ ${count} cửa sổ (Bấm F8 để Bật/Tắt). Bạn có thể thao tác bình thường trong app này.`
           : count === 1
           ? `Đã bật đồng bộ nhưng mới tìm thấy 1 cửa sổ (cần tối thiểu 2 cửa sổ để đồng bộ chuột)`
           : `Đã bật đồng bộ nhưng chưa phát hiện cửa sổ mục tiêu nào đang mở`;
@@ -609,11 +703,15 @@ function startMouseSync(pattern) {
   }
 }
 
-// Dừng đồng bộ chuột
+// Dừng đồng bộ chuột hoàn toàn
 function stopMouseSync() {
   if (mouseSyncProcess) {
     try {
-      mouseSyncProcess.kill();
+      if (process.platform === "win32" && mouseSyncProcess.pid) {
+        spawn("taskkill", ["/pid", String(mouseSyncProcess.pid), "/T", "/F"], { windowsHide: true });
+      } else {
+        mouseSyncProcess.kill();
+      }
     } catch {}
     mouseSyncProcess = null;
   }
@@ -636,6 +734,32 @@ ipcMain.handle("launcher:chrome-path", () => ({ path: findChrome(), platform: pr
 
 ipcMain.handle("launcher:get-detected-apps", async () => {
   return await getAllDetectedApps();
+});
+
+ipcMain.handle("launcher:refresh-apps", async () => {
+  cachedDetectedApps = null;
+  return await getAllDetectedApps(true);
+});
+
+ipcMain.handle("launcher:toggle-always-on-top", (_event, flag) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    const next = typeof flag === "boolean" ? flag : !mainWindow.isAlwaysOnTop();
+    mainWindow.setAlwaysOnTop(next);
+    return { alwaysOnTop: next };
+  }
+  return { alwaysOnTop: false };
+});
+
+ipcMain.handle("launcher:get-always-on-top", () => {
+  return { alwaysOnTop: mainWindow && !mainWindow.isDestroyed() ? mainWindow.isAlwaysOnTop() : false };
+});
+
+ipcMain.handle("launcher:set-mouse-sync-pattern", (_event, pattern) => {
+  if (typeof pattern === "string" && pattern.trim()) {
+    mouseSyncPattern = pattern.trim();
+    return { ok: true, pattern: mouseSyncPattern };
+  }
+  return { ok: false };
 });
 
 ipcMain.handle("launcher:browse-app", async () => {
@@ -694,6 +818,7 @@ ipcMain.handle("launcher:start", async (_event, config) => {
 
   const modeType = config.modeType || "single-app"; // 'single-app' | 'multi-app'
   const delayMs = Math.max(0, Math.min(10000, Number(config.delayMs) || 0));
+  const profileMode = config.profileMode || "normal"; // 'normal' | 'incognito' | 'isolated'
 
   let workArea = { x: 0, y: 0, width: 1920, height: 1040 };
   try {
@@ -736,23 +861,33 @@ ipcMain.handle("launcher:start", async (_event, config) => {
         let args = [];
         if (currentApp.type === "browser") {
           const isFirefox = /firefox/i.test(currentApp.name || currentApp.path);
+          const isEdge = /edge|msedge/i.test(currentApp.name || currentApp.path);
           const bounds = calculateWindowBounds(apps.length, i, workArea);
 
-          if (urlList.length > 0) {
-            const url = urlList[i % urlList.length];
-            if (isFirefox) {
-              args = isWindowMode ? ["-new-window", url] : ["-new-tab", url];
-            } else {
-              if (isWindowMode) {
-                args = [
+          const url = urlList.length > 0 ? urlList[i % urlList.length] : "https://www.google.com";
+
+          if (isFirefox) {
+            args = isWindowMode ? ["-new-window", url] : ["-new-tab", url];
+            if (profileMode === "incognito") args.unshift("-private-window");
+          } else {
+            args = isWindowMode
+              ? [
                   "--new-window",
                   `--window-position=${bounds.x},${bounds.y}`,
                   `--window-size=${bounds.width},${bounds.height}`,
+                  "--no-first-run",
+                  "--no-default-browser-check",
                   url
-                ];
-              } else {
-                args = ["--new-tab", url];
-              }
+                ]
+              : ["--new-tab", url];
+
+            if (profileMode === "incognito") {
+              if (isEdge) args.unshift("-inprivate");
+              else args.unshift("--incognito");
+            } else if (profileMode === "isolated") {
+              const isolatedDir = path.join(app.getPath("userData"), "multi_profiles", `profile_${i + 1}`);
+              if (!fs.existsSync(isolatedDir)) fs.mkdirSync(isolatedDir, { recursive: true });
+              args.unshift(`--user-data-dir=${isolatedDir}`);
             }
           }
         } else if (currentApp.customArgs) {
@@ -814,6 +949,7 @@ ipcMain.handle("launcher:start", async (_event, config) => {
       const mode = config.mode === "windows" ? "windows" : "tabs";
       const isBrowser = targetApp.type === "browser" || /chrome|edge|coccoc|brave|firefox|opera/i.test(targetApp.name || targetApp.path);
       const isFirefox = /firefox/i.test(targetApp.name || targetApp.path);
+      const isEdge = /edge|msedge/i.test(targetApp.name || targetApp.path);
 
       let urls = [];
       if (isBrowser) {
@@ -834,16 +970,31 @@ ipcMain.handle("launcher:start", async (_event, config) => {
           const bounds = calculateWindowBounds(count, i, workArea);
           if (isFirefox) {
             args = mode === "windows" ? ["-new-window", url] : ["-new-tab", url];
+            if (profileMode === "incognito") args.unshift("-private-window");
+            else if (profileMode === "isolated") {
+              const isolatedDir = path.join(app.getPath("userData"), "multi_profiles", `profile_${i + 1}`);
+              if (!fs.existsSync(isolatedDir)) fs.mkdirSync(isolatedDir, { recursive: true });
+              args.unshift("-profile", isolatedDir);
+            }
           } else {
-            if (mode === "windows") {
-              args = [
-                "--new-window",
-                `--window-position=${bounds.x},${bounds.y}`,
-                `--window-size=${bounds.width},${bounds.height}`,
-                url
-              ];
-            } else {
-              args = ["--new-tab", url];
+            args = mode === "windows"
+              ? [
+                  "--new-window",
+                  `--window-position=${bounds.x},${bounds.y}`,
+                  `--window-size=${bounds.width},${bounds.height}`,
+                  "--no-first-run",
+                  "--no-default-browser-check",
+                  url
+                ]
+              : ["--new-tab", url];
+
+            if (profileMode === "incognito") {
+              if (isEdge) args.unshift("-inprivate");
+              else args.unshift("--incognito");
+            } else if (profileMode === "isolated") {
+              const isolatedDir = path.join(app.getPath("userData"), "multi_profiles", `profile_${i + 1}`);
+              if (!fs.existsSync(isolatedDir)) fs.mkdirSync(isolatedDir, { recursive: true });
+              args.unshift(`--user-data-dir=${isolatedDir}`);
             }
           }
         } else if (config.customArgs) {
