@@ -8,16 +8,16 @@
     "dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "vite build",
     "start": "electron .",
-    "package": "npm run build && electron-packager . \"Multi Launcher\" --platform=win32 --arch=x64 --out=release --overwrite --prune=true"
+    "package": "npm run build && electron-packager . \"Multi Launcher\" --platform=win32 --arch=x64 --out=release --overwrite --prune=true --ignore=\"^/(release|src|\\.git|\\.gemini|\\.vscode)\""
   },
   "dependencies": {
-    "electron": "^35.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
     "concurrently": "^9.1.2",
+    "electron": "^35.0.0",
     "electron-packager": "^17.1.2",
     "vite": "^6.1.0",
     "wait-on": "^8.0.2"
