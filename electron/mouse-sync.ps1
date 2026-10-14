@@ -21,12 +21,16 @@ public class MouseSyncService {
   public const int WM_LBUTTONUP = 0x0202;
   public const int WM_RBUTTONDOWN = 0x0204;
   public const int WM_RBUTTONUP = 0x0205;
+  public const int WM_MBUTTONDOWN = 0x0207;
+  public const int WM_MBUTTONUP = 0x0208;
   public const int WM_MOUSEWHEEL = 0x020A;
 
   public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
   public const uint MOUSEEVENTF_LEFTUP = 0x0004;
   public const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
   public const uint MOUSEEVENTF_RIGHTUP = 0x0010;
+  public const uint MOUSEEVENTF_MIDDLEDOWN = 0x0020;
+  public const uint MOUSEEVENTF_MIDDLEUP = 0x0040;
   public const uint MOUSEEVENTF_WHEEL = 0x0800;
 
   public const long SYNC_MAGIC = 0x594E43; // 'SYNC'
@@ -116,6 +120,7 @@ public class MouseSyncService {
   public static List<IntPtr> TrackedHwnds = new List<IntPtr>();
   public static string TargetPattern = "";
   public static uint LauncherPid = 0;
+  public static int LastReportedCount = -1;
   private static bool _isSyncing = false;
 
   public static bool IsMultiLauncher(IntPtr hWnd) {
@@ -141,7 +146,7 @@ public class MouseSyncService {
     return false;
   }
 
-  public static void RefreshWindows() {
+  public static int RefreshWindows() {
     List<IntPtr> list = new List<IntPtr>();
     EnumWindows((hWnd, lParam) => {
       if (!IsWindow(hWnd) || !IsWindowVisible(hWnd) || IsIconic(hWnd)) return true;
@@ -153,11 +158,16 @@ public class MouseSyncService {
       if (!string.IsNullOrEmpty(title) && title != "Program Manager") {
         bool isMatch = false;
         try {
-          isMatch = string.IsNullOrEmpty(TargetPattern) || TargetPattern == ".*" ||
-                    Regex.IsMatch(title, TargetPattern, RegexOptions.IgnoreCase);
+          if (string.IsNullOrEmpty(TargetPattern) || TargetPattern == ".*") {
+            isMatch = true;
+          } else {
+            isMatch = Regex.IsMatch(title, TargetPattern, RegexOptions.IgnoreCase);
+          }
         } catch {
-          isMatch = false;
+          // Fallback an toàn nếu pattern chứa ký tự đặc biệt
+          isMatch = title.IndexOf(TargetPattern, StringComparison.OrdinalIgnoreCase) >= 0;
         }
+
         if (isMatch) {
           RECT r;
           if (GetWindowRect(hWnd, out r) && r.Width > 120 && r.Height > 100) {
@@ -167,18 +177,25 @@ public class MouseSyncService {
       }
       return true;
     }, IntPtr.Zero);
+
     TrackedHwnds = list;
+    int currentCount = list.Count;
+    if (currentCount != LastReportedCount) {
+      LastReportedCount = currentCount;
+      Console.WriteLine("COUNT: " + currentCount);
+    }
+    return currentCount;
   }
 
   public static int StartHook(string pattern, uint lPid) {
     TargetPattern = pattern;
     LauncherPid = lPid;
-    RefreshWindows();
+    int count = RefreshWindows();
     using (Process curProcess = Process.GetCurrentProcess())
     using (ProcessModule curModule = curProcess.MainModule) {
       _hookID = SetWindowsHookEx(WH_MOUSE_LL, _proc, GetModuleHandle(curModule.ModuleName), 0);
     }
-    return TrackedHwnds.Count;
+    return count;
   }
 
   public static void StopHook() {
@@ -200,6 +217,7 @@ public class MouseSyncService {
       int msg = wParam.ToInt32();
       if (msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP ||
           msg == WM_RBUTTONDOWN || msg == WM_RBUTTONUP ||
+          msg == WM_MBUTTONDOWN || msg == WM_MBUTTONUP ||
           msg == WM_MOUSEWHEEL) {
 
         POINT pt = hookStruct.pt;
@@ -254,6 +272,8 @@ public class MouseSyncService {
         else if (msg == WM_LBUTTONUP) eventFlags = MOUSEEVENTF_LEFTUP;
         else if (msg == WM_RBUTTONDOWN) eventFlags = MOUSEEVENTF_RIGHTDOWN;
         else if (msg == WM_RBUTTONUP) eventFlags = MOUSEEVENTF_RIGHTUP;
+        else if (msg == WM_MBUTTONDOWN) eventFlags = MOUSEEVENTF_MIDDLEDOWN;
+        else if (msg == WM_MBUTTONUP) eventFlags = MOUSEEVENTF_MIDDLEUP;
         else if (msg == WM_MOUSEWHEEL) eventFlags = MOUSEEVENTF_WHEEL;
 
         _isSyncing = true;
@@ -289,9 +309,9 @@ $count = [MouseSyncService]::StartHook($pattern, [uint32]$launcherPid)
 Write-Output "READY: $count"
 
 $timer = New-Object System.Windows.Forms.Timer
-$timer.Interval = 2000
+$timer.Interval = 1500
 $timer.add_Tick({
-  [MouseSyncService]::RefreshWindows()
+  [void][MouseSyncService]::RefreshWindows()
 })
 $timer.Start()
 
