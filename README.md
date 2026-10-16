@@ -27,18 +27,36 @@
 - **Ẩn danh (Incognito / InPrivate)**: Không lưu lịch sử, cookie hay cache.
 - **Cách ly tài khoản độc lập (Isolated Data-dir)**: Tự động cấp thư mục dữ liệu người dùng (`--user-data-dir`) riêng biệt cho từng cửa sổ. Cho phép đăng nhập đồng thời hàng loạt tài khoản Google, Facebook, sàn thương mại điện tử, game web/MMO mà không bị trùng lặp phiên hoặc xung đột cookie.
 
-### 5. ⚡ Kịch Bản Mẫu (Presets & Quick Scenarios)
-- **💼 Không gian làm việc**: Mở cùng lúc Chrome, VS Code, Notepad & Zalo.
-- **🌐 4 Cửa sổ chia góc**: 4 cửa sổ trình duyệt chia đều 4 góc màn hình với các website thiết lập sẵn.
-- **🎮 Đa tài khoản độc lập**: 4 cửa sổ Chrome profile riêng biệt phục vụ nuôi acc / cày cuốc.
+### 5. ⚡ Thanh Tác Vụ Kết Hợp Nhanh (Quick Combos Ribbon)
+- **🚀 Chạy & Chia Lưới**: Tự động mở toàn bộ ứng dụng rồi tự căn chỉnh lưới vừa khít màn hình ngay khi mở xong, không cần bấm thêm nút nào.
+- **🎯 Chạy & Bật Sync F8**: Quy trình tự động trọn gói: Mở ứng dụng ➔ Căn chỉnh lưới ➔ BẬT ngay tính năng đồng bộ chuột F8.
+- **🛑 Đóng sạch cửa sổ mục tiêu**: Đóng toàn bộ các tab hoặc cửa sổ ứng dụng mục tiêu đang mở chỉ với 1 click bằng tín hiệu Win32 `WM_CLOSE` an toàn, dọn sạch không gian làm việc tức thì.
+- **📋 Dán URL từ Clipboard**: Đọc danh sách liên kết đang copy trong bộ nhớ tạm và điền tự động vào ô danh sách URL.
 
-### 6. 🔍 Tìm Kiếm & Nhận Diện Ứng Dụng Tự Động
+### 6. 📐 Thanh Công Cụ Bố Cục Màn Hình Đa Năng (Window Layout Toolbar)
+Bên cạnh chế độ tự động tính toán lưới, ứng dụng cung cấp thanh công cụ bố cục trực quan:
+- **🔲 Tự động (Auto Grid)**: Tự chia ma trận hàng x cột tối ưu nhất theo số lượng cửa sổ.
+- **◫ 2 Cột (50/50)**: Chia đôi màn hình nửa trái - nửa phải.
+- **▥ 3 Cột (33.3% mỗi cột)**: Chia 3 dải dọc màn hình.
+- **⊞ 4 Ô Góc (2x2)**: Chia 4 cửa sổ vào 4 góc màn hình.
+- **▦ 6 Ô (3x2)**: Chia 6 cửa sổ thành 2 hàng, 3 cột.
+- **🗕 Thu nhỏ tất cả / 🗖 Khôi phục**: Thu nhỏ hoặc đưa toàn bộ cửa sổ trở lại màn hình.
+
+### 7. 💾 Quản Lý Kịch Bản Tùy Chỉnh (Custom Presets System)
+- Nút **"💾 + Lưu kịch bản hiện tại"**: Cho phép người dùng đặt tên, chọn biểu tượng (icon) và lưu toàn bộ thiết lập hiện tại (chế độ, ứng dụng đã chọn, số lượng, URL, cookie mode) thành một kịch bản riêng.
+- Quản lý và xóa nhanh kịch bản bất cứ lúc nào qua nút `✕`.
+- Kèm sẵn 3 kịch bản mẫu: *💼 Không gian làm việc*, *🌐 4 Cửa sổ chia góc*, *🎮 Đa tài khoản độc lập MMO*.
+
+### 8. 🔍 Thanh Công Cụ Tìm Kiếm & Chọn Ứng Dụng Nâng Cấp
 - Quét tự động và nhận diện các ứng dụng phổ biến: Chrome, Edge, Cốc Cốc, Brave, Firefox, Opera, VS Code, Notepad, Calculator, Zalo, Telegram, Discord, Word, Excel, PowerPoint, Paint, File Explorer, Windows Terminal, CMD...
 - Nút **"+ Chọn file .exe từ máy"**: Cho phép nạp bất kỳ file thực thi `.exe`, `.bat`, `.cmd`, `.lnk` nào trên máy tính và lưu lại vào danh sách yêu thích.
-- Thanh tìm kiếm tức thời và bộ lọc theo danh mục (Khả dụng, Trình duyệt, Hệ thống/Văn phòng, Ứng dụng tự thêm).
+- Thanh công cụ chọn nhanh: **Tất cả**, **Bỏ chọn**, **🔄 Đảo vùng chọn**, **🌐 Chỉ chọn trình duyệt**.
 
-### 7. 📌 Ghim Trên Cùng (Always on Top) & Phím Tắt
-- Nút **📌 Ghim trên cùng** giúp cửa sổ Multi Launcher luôn nổi trên các ứng dụng khác, tiện theo dõi tiến trình và bật tắt đồng bộ.
+### 9. 📌 Thanh Điều Khiển Tiện Ích Trên Cùng (Header Toolbar)
+- **📌 Ghim trên cùng**: Luôn hiển thị Multi Launcher trên các cửa sổ khác.
+- **🟢 Trạng thái đồng bộ chuột trực tiếp**: Báo số lượng tab đang đồng bộ, bấm để chuyển đổi.
+- **🛑 Đóng nhanh tab**: Dọn dẹp nhanh các cửa sổ đang mở.
+- **📁 Thư mục Profiles**: Mở nhanh thư mục lưu trữ profile độc lập (`%TEMP%\multi_launcher_profiles`).
 - Phím tắt **Escape**: Hủy dừng ngay tiến trình đang mở hàng loạt.
 
 ---
