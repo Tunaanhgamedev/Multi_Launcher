@@ -1,7 +1,8 @@
-const { app, BrowserWindow, ipcMain, shell, dialog, screen, globalShortcut } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, dialog, screen, globalShortcut, clipboard } = require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
+const os = require("node:os");
 
 let mainWindow;
 let activeJob = null;
@@ -513,14 +514,23 @@ function calculateWindowBounds(total, index, workArea) {
 }
 
 /**
- * Script Win32 PowerShell tìm các cửa sổ, un-maximize (SW_RESTORE) và căn chỉnh thành lưới vừa khít màn hình
+ * Script Win32 PowerShell tìm các cửa sổ, un-maximize (SW_RESTORE) và căn chỉnh theo các bố cục màn hình:
+ * - 'auto': chia lưới tối ưu
+ * - 'split-2': chia đôi cột trái / phải (50/50)
+ * - 'split-3': chia 3 cột (33.3% mỗi cột)
+ * - 'grid-2x2': chia 4 ô góc (2x2)
+ * - 'grid-3x2': chia 6 ô (2 hàng 3 cột)
+ * - 'minimize': thu nhỏ tất cả
+ * - 'restore': khôi phục tất cả
  */
-async function arrangeWindows(targetPattern = "Chrome") {
+async function arrangeWindows(targetPattern = "Chrome", layout = "auto") {
   if (process.platform !== "win32") return { arranged: false, count: 0, message: "Sắp xếp lưới chỉ được hỗ trợ trên Windows." };
   const safePattern = String(targetPattern || ".*").replace(/'/g, "''");
+  const safeLayout = String(layout || "auto").replace(/'/g, "''");
   const ps = String.raw`
 Add-Type -AssemblyName System.Windows.Forms
 $pat = '${safePattern}'
+$layout = '${safeLayout}'
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -563,35 +573,90 @@ $wins = New-Object System.Collections.Generic.List[System.IntPtr]
 
 $screen = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
 $n = $wins.Count
+
 if ($n -gt 0) {
-  $cols = [Math]::Ceiling([Math]::Sqrt($n))
-  $rows = [Math]::Ceiling($n / $cols)
-  $rowH = [Math]::Floor($screen.Height / $rows)
+  if ($layout -eq 'minimize') {
+    foreach ($h in $wins) {
+      [void][Win32Grid]::ShowWindow($h, 6)
+    }
+  } elseif ($layout -eq 'restore') {
+    foreach ($h in $wins) {
+      [void][Win32Grid]::ShowWindow($h, 9)
+    }
+  } elseif ($layout -eq 'split-2') {
+    $colW = [Math]::Floor($screen.Width / 2)
+    for ($i = 0; $i -lt [Math]::Min($n, 2); $i++) {
+      $x = $screen.Left + ($i * $colW)
+      $w = if ($i -eq 1) { $screen.Width - $colW } else { $colW }
+      [void][Win32Grid]::ShowWindow($wins[$i], 9)
+      [void][Win32Grid]::MoveWindow($wins[$i], $x, $screen.Top, $w, $screen.Height, $true)
+    }
+  } elseif ($layout -eq 'split-3') {
+    $colW = [Math]::Floor($screen.Width / 3)
+    for ($i = 0; $i -lt [Math]::Min($n, 3); $i++) {
+      $x = $screen.Left + ($i * $colW)
+      $w = if ($i -eq 2) { $screen.Width - ($colW * 2) } else { $colW }
+      [void][Win32Grid]::ShowWindow($wins[$i], 9)
+      [void][Win32Grid]::MoveWindow($wins[$i], $x, $screen.Top, $w, $screen.Height, $true)
+    }
+  } elseif ($layout -eq 'grid-2x2') {
+    $halfW = [Math]::Floor($screen.Width / 2)
+    $halfH = [Math]::Floor($screen.Height / 2)
+    $positions = @(
+      @{ X = $screen.Left; Y = $screen.Top; W = $halfW; H = $halfH },
+      @{ X = $screen.Left + $halfW; Y = $screen.Top; W = $screen.Width - $halfW; H = $halfH },
+      @{ X = $screen.Left; Y = $screen.Top + $halfH; W = $halfW; H = $screen.Height - $halfH },
+      @{ X = $screen.Left + $halfW; Y = $screen.Top + $halfH; W = $screen.Width - $halfW; H = $screen.Height - $halfH }
+    )
+    for ($i = 0; $i -lt [Math]::Min($n, 4); $i++) {
+      $pos = $positions[$i]
+      [void][Win32Grid]::ShowWindow($wins[$i], 9)
+      [void][Win32Grid]::MoveWindow($wins[$i], $pos.X, $pos.Y, $pos.W, $pos.H, $true)
+    }
+  } elseif ($layout -eq 'grid-3x2') {
+    $colW = [Math]::Floor($screen.Width / 3)
+    $rowH = [Math]::Floor($screen.Height / 2)
+    for ($i = 0; $i -lt [Math]::Min($n, 6); $i++) {
+      $r = [Math]::Floor($i / 3)
+      $c = $i % 3
+      $x = $screen.Left + ($c * $colW)
+      $y = $screen.Top + ($r * $rowH)
+      $w = if ($c -eq 2) { $screen.Width - ($colW * 2) } else { $colW }
+      $h = if ($r -eq 1) { $screen.Height - $rowH } else { $rowH }
+      [void][Win32Grid]::ShowWindow($wins[$i], 9)
+      [void][Win32Grid]::MoveWindow($wins[$i], $x, $y, $w, $h, $true)
+    }
+  } else {
+    # auto grid
+    $cols = [Math]::Ceiling([Math]::Sqrt($n))
+    $rows = [Math]::Ceiling($n / $cols)
+    $rowH = [Math]::Floor($screen.Height / $rows)
 
-  $itemsPerRow = New-Object System.Collections.Generic.List[int]
-  $rem = $n
-  for ($r = 0; $r -lt $rows; $r++) {
-    $rowsLeft = $rows - $r
-    $c = [Math]::Ceiling($rem / $rowsLeft)
-    $itemsPerRow.Add($c)
-    $rem -= $c
-  }
+    $itemsPerRow = New-Object System.Collections.Generic.List[int]
+    $rem = $n
+    for ($r = 0; $r -lt $rows; $r++) {
+      $rowsLeft = $rows - $r
+      $c = [Math]::Ceiling($rem / $rowsLeft)
+      $itemsPerRow.Add($c)
+      $rem -= $c
+    }
 
-  $idx = 0
-  for ($r = 0; $r -lt $rows; $r++) {
-    $countInRow = $itemsPerRow[$r]
-    $colW = [Math]::Floor($screen.Width / $countInRow)
-    $y = $screen.Top + ($r * $rowH)
-    $actualH = if ($r -eq ($rows - 1)) { $screen.Height - ($r * $rowH) } else { $rowH }
+    $idx = 0
+    for ($r = 0; $r -lt $rows; $r++) {
+      $countInRow = $itemsPerRow[$r]
+      $colW = [Math]::Floor($screen.Width / $countInRow)
+      $y = $screen.Top + ($r * $rowH)
+      $actualH = if ($r -eq ($rows - 1)) { $screen.Height - ($r * $rowH) } else { $rowH }
 
-    for ($c = 0; $c -lt $countInRow; $c++) {
-      if ($idx -lt $n) {
-        $x = $screen.Left + ($c * $colW)
-        $actualW = if ($c -eq ($countInRow - 1)) { $screen.Width - ($c * $colW) } else { $colW }
-        $h = $wins[$idx]
-        [void][Win32Grid]::ShowWindow($h, 9)
-        [void][Win32Grid]::MoveWindow($h, $x, $y, $actualW, $actualH, $true)
-        $idx++
+      for ($c = 0; $c -lt $countInRow; $c++) {
+        if ($idx -lt $n) {
+          $x = $screen.Left + ($c * $colW)
+          $actualW = if ($c -eq ($countInRow - 1)) { $screen.Width - ($c * $colW) } else { $colW }
+          $h = $wins[$idx]
+          [void][Win32Grid]::ShowWindow($h, 9)
+          [void][Win32Grid]::MoveWindow($h, $x, $y, $actualW, $actualH, $true)
+          $idx++
+        }
       }
     }
   }
@@ -610,10 +675,86 @@ Write-Output $wins.Count
     child.stderr.on("data", (d) => (err += d.toString()));
     child.on("close", (code) => {
       const count = Number(out.trim()) || 0;
-      if (code === 0) resolve({ arranged: true, count, message: `Đã tự động căn chỉnh ${count} cửa sổ vừa khít toàn bộ màn hình.` });
+      const layoutName =
+        layout === "split-2" ? "2 Cột (50/50)" :
+        layout === "split-3" ? "3 Cột" :
+        layout === "grid-2x2" ? "4 Ô (2x2)" :
+        layout === "grid-3x2" ? "6 Ô (3x2)" :
+        layout === "minimize" ? "Thu nhỏ" :
+        layout === "restore" ? "Khôi phục" : "Lưới tự động";
+
+      if (code === 0) resolve({ arranged: true, count, message: `Đã căn chỉnh ${count} cửa sổ theo bố cục [${layoutName}].` });
       else resolve({ arranged: false, count: 0, message: `Không thể sắp xếp tự động: ${err.trim() || "PowerShell trả về lỗi."}` });
     });
     child.on("error", () => resolve({ arranged: false, count: 0, message: "Không thể khởi chạy PowerShell để sắp xếp cửa sổ." }));
+  });
+}
+
+/**
+ * Đóng nhanh tất cả các cửa sổ mục tiêu khớp pattern bằng WM_CLOSE an toàn
+ */
+async function closeTargetWindows(targetPattern = "Chrome") {
+  if (process.platform !== "win32") return { closed: false, count: 0, message: "Chức năng chỉ hỗ trợ trên Windows." };
+  const safePattern = String(targetPattern || ".*").replace(/'/g, "''");
+  const ps = String.raw`
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.RegularExpressions;
+public class Win32Close {
+  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc cb, IntPtr extra);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
+  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+}
+"@
+$pat = '${safePattern}'
+$closed = 0
+[Win32Close]::EnumWindows({
+  param($h, $l)
+  if ([Win32Close]::IsWindowVisible($h)) {
+    $sb = New-Object System.Text.StringBuilder 512
+    [void][Win32Close]::GetWindowText($h, $sb, $sb.Capacity)
+    $text = $sb.ToString()
+    if ($text -and ($text -notmatch 'Multi Launcher') -and ($text -notmatch '^Program Manager$')) {
+      $isMatch = $false
+      try {
+        if (-not $pat -or $pat -eq '.*') {
+          $isMatch = $true
+        } else {
+          $isMatch = [System.Text.RegularExpressions.Regex]::IsMatch($text, $pat, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        }
+      } catch {
+        $isMatch = $text.ToLower().Contains($pat.ToLower())
+      }
+      if ($isMatch) {
+        [void][Win32Close]::PostMessage($h, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+        $script:closed++
+      }
+    }
+  }
+  return $true
+}, [IntPtr]::Zero)
+Write-Output $closed
+`;
+  return new Promise((resolve) => {
+    const child = spawn(
+      "powershell.exe",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
+      { windowsHide: true }
+    );
+    let out = "";
+    let err = "";
+    child.stdout.on("data", (d) => (out += d.toString()));
+    child.stderr.on("data", (d) => (err += d.toString()));
+    child.on("close", (code) => {
+      const count = Number(out.trim()) || 0;
+      if (code === 0) resolve({ closed: true, count, message: count > 0 ? `Đã gửi tín hiệu đóng ${count} cửa sổ mục tiêu.` : "Không tìm thấy cửa sổ mục tiêu nào đang mở." });
+      else resolve({ closed: false, count: 0, message: `Lỗi khi đóng cửa sổ: ${err.trim() || "PowerShell error"}` });
+    });
+    child.on("error", () => resolve({ closed: false, count: 0, message: "Không thể gọi PowerShell để đóng cửa sổ." }));
   });
 }
 
@@ -796,8 +937,25 @@ ipcMain.handle("launcher:browse-app", async () => {
   };
 });
 
-ipcMain.handle("launcher:arrange-windows", async (_event, pattern) => {
-  return await arrangeWindows(pattern || ".*");
+ipcMain.handle("launcher:arrange-windows", async (_event, pattern, layout) => {
+  return await arrangeWindows(pattern || ".*", layout || "auto");
+});
+
+ipcMain.handle("launcher:close-target-windows", async (_event, pattern) => {
+  return await closeTargetWindows(pattern || ".*");
+});
+
+ipcMain.handle("launcher:open-profiles-folder", async () => {
+  const profileDir = path.join(os.tmpdir(), "multi_launcher_profiles");
+  if (!fs.existsSync(profileDir)) {
+    fs.mkdirSync(profileDir, { recursive: true });
+  }
+  await shell.openPath(profileDir);
+  return { ok: true, path: profileDir };
+});
+
+ipcMain.handle("launcher:read-clipboard", () => {
+  return { text: clipboard.readText() || "" };
 });
 
 ipcMain.handle("launcher:toggle-mouse-sync", (_event, pattern) => {
