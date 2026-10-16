@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 
 const DEFAULT_URLS = "https://www.google.com";
 const STORAGE_KEY_CUSTOM_APPS = "multi_launcher_custom_apps";
@@ -66,6 +66,23 @@ export default function App() {
   // Đồng bộ chuột
   const [syncActive, setSyncActive] = useState(false);
   const [syncCount, setSyncCount] = useState(0);
+
+  // Kịch bản tùy chỉnh của người dùng
+  const [customPresets, setCustomPresets] = useState(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_PRESETS);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [showSavePresetModal, setShowSavePresetModal] = useState(false);
+  const [newPresetName, setNewPresetName] = useState("");
+  const [newPresetIcon, setNewPresetIcon] = useState("⚡");
+
+  // Quản lý combo tác vụ và pattern
+  const pendingComboRef = useRef(null);
+  const targetPatternRef = useRef("Chrome|Edge|CocCoc|Brave|Firefox");
 
   // Tiến trình & Trạng thái
   const [running, setRunning] = useState(false);
@@ -148,6 +165,23 @@ export default function App() {
         setRunning(false);
         setProgress({ opened: event.opened, total: event.total });
         setStatus(event.message);
+
+        // Kích hoạt Combo tác vụ nếu có yêu cầu
+        if (pendingComboRef.current) {
+          const combo = pendingComboRef.current;
+          pendingComboRef.current = null;
+          const pattern = targetPatternRef.current;
+
+          setTimeout(async () => {
+            if (combo.autoArrange && window.launcher.arrangeWindows) {
+              await window.launcher.arrangeWindows(pattern, combo.layout || "auto");
+            }
+            if (combo.autoSync && window.launcher.toggleMouseSync) {
+              const res = await window.launcher.toggleMouseSync(pattern);
+              if (res && res.active) setSyncActive(true);
+            }
+          }, 600);
+        }
       } else if (event.type === "warning") {
         setStatus(event.message);
       }
@@ -179,21 +213,26 @@ export default function App() {
     };
   }, [running]);
 
-  // Cập nhật targetPattern cho backend mỗi khi chọn ứng dụng
-  useEffect(() => {
+  // Lấy mẫu tên cửa sổ của ứng dụng đang chọn
+  const getTargetPattern = useCallback(() => {
     const defaultPattern = "Chrome|Edge|CocCoc|Brave|Firefox";
     const selectedNames = apps
       .filter((a) => selectedAppIds.has(a.id))
       .map((a) => a.windowPattern || a.name)
       .filter(Boolean);
-    const pattern = workflow === "single"
+    return workflow === "single"
       ? (currentTargetApp?.windowPattern || currentTargetApp?.name || defaultPattern)
       : (selectedNames.length ? selectedNames.join("|") : defaultPattern);
+  }, [apps, selectedAppIds, workflow, currentTargetApp]);
 
+  // Cập nhật targetPattern cho backend mỗi khi chọn ứng dụng
+  useEffect(() => {
+    const pattern = getTargetPattern();
+    targetPatternRef.current = pattern;
     if (window.launcher.setMouseSyncPattern) {
       window.launcher.setMouseSyncPattern(pattern);
     }
-  }, [workflow, targetAppId, selectedAppIds, apps, currentTargetApp]);
+  }, [getTargetPattern]);
 
   // Lọc danh mục & tìm kiếm ứng dụng
   const filteredApps = useMemo(() => {
@@ -296,15 +335,7 @@ export default function App() {
   async function handleToggleSync() {
     setError("");
     try {
-      const defaultPattern = "Chrome|Edge|CocCoc|Brave|Firefox";
-      const selectedNames = apps
-        .filter((a) => selectedAppIds.has(a.id))
-        .map((a) => a.windowPattern || a.name)
-        .filter(Boolean);
-      const targetPattern = workflow === "single"
-        ? (currentTargetApp?.windowPattern || currentTargetApp?.name || defaultPattern)
-        : (selectedNames.length ? selectedNames.join("|") : defaultPattern);
-
+      const targetPattern = targetPatternRef.current || getTargetPattern();
       const res = await window.launcher.toggleMouseSync(targetPattern);
       setSyncActive(res.active);
     } catch (e) {
@@ -312,21 +343,22 @@ export default function App() {
     }
   }
 
-  // Căn chỉnh ngay các cửa sổ trên màn hình
-  async function handleArrangeNow() {
+  // Căn chỉnh cửa sổ theo bố cục cụ thể
+  async function handleArrangeWithLayout(layout = "auto") {
     setError("");
-    setStatus("Đang căn chỉnh các cửa sổ vừa khít màn hình...");
+    const targetPattern = targetPatternRef.current || getTargetPattern();
+    const layoutNames = {
+      "auto": "Lưới tự động",
+      "split-2": "2 Cột (50/50)",
+      "split-3": "3 Cột",
+      "grid-2x2": "4 Ô (2x2)",
+      "grid-3x2": "6 Ô (3x2)",
+      "minimize": "Thu nhỏ",
+      "restore": "Khôi phục"
+    };
+    setStatus(`Đang căn chỉnh các cửa sổ theo bố cục [${layoutNames[layout] || layout}]...`);
     try {
-      const defaultPattern = "Chrome|Edge|CocCoc|Brave|Firefox";
-      const selectedNames = apps
-        .filter((a) => selectedAppIds.has(a.id))
-        .map((a) => a.windowPattern || a.name)
-        .filter(Boolean);
-      const targetPattern = workflow === "single"
-        ? (currentTargetApp?.windowPattern || currentTargetApp?.name || defaultPattern)
-        : (selectedNames.length ? selectedNames.join("|") : defaultPattern);
-
-      const res = await window.launcher.arrangeWindows(targetPattern);
+      const res = await window.launcher.arrangeWindows(targetPattern, layout);
       if (res.arranged) {
         setStatus(res.message || "Đã căn chỉnh các cửa sổ thành công.");
       } else {
@@ -335,6 +367,110 @@ export default function App() {
     } catch (e) {
       setError("Lỗi khi căn chỉnh cửa sổ: " + e.message);
     }
+  }
+
+  // Căn chỉnh ngay các cửa sổ trên màn hình (mặc định auto)
+  async function handleArrangeNow() {
+    await handleArrangeWithLayout("auto");
+  }
+
+  // Đóng toàn bộ cửa sổ mục tiêu đang mở
+  async function handleCloseAllTarget() {
+    setError("");
+    const pattern = targetPatternRef.current || getTargetPattern();
+    setStatus("Đang gửi yêu cầu đóng các cửa sổ mục tiêu...");
+    try {
+      const res = await window.launcher.closeTargetWindows(pattern);
+      if (res.closed) {
+        setStatus(res.message);
+      } else {
+        setError(res.message);
+      }
+    } catch (e) {
+      setError("Lỗi khi đóng cửa sổ: " + e.message);
+    }
+  }
+
+  // Mở thư mục chứa Profile người dùng
+  async function handleOpenProfilesFolder() {
+    try {
+      await window.launcher.openProfilesFolder();
+      setStatus("Đã mở thư mục lưu trữ profile độc lập.");
+    } catch (e) {
+      setError("Không thể mở thư mục: " + e.message);
+    }
+  }
+
+  // Dán nội dung link từ Clipboard
+  async function handlePasteClipboard() {
+    try {
+      const res = await window.launcher.readClipboard();
+      if (!res.text || !res.text.trim()) {
+        setStatus("Clipboard hiện đang trống.");
+        return;
+      }
+      const text = res.text.trim();
+      setUrls((prev) => (prev && prev.trim() ? `${prev.trim()}\n${text}` : text));
+      setStatus("Đã dán liên kết từ clipboard vào danh sách URL.");
+    } catch (e) {
+      setError("Không thể đọc clipboard: " + e.message);
+    }
+  }
+
+  // Đảo vùng chọn ứng dụng
+  function handleInvertSelection() {
+    const available = filteredApps.filter((a) => a.available).map((a) => a.id);
+    setSelectedAppIds((prev) => {
+      const next = new Set();
+      available.forEach((id) => {
+        if (!prev.has(id)) next.add(id);
+      });
+      return next;
+    });
+  }
+
+  // Chỉ tích chọn các trình duyệt
+  function handleSelectOnlyBrowsers() {
+    const browserIds = apps.filter((a) => a.available && a.type === "browser").map((a) => a.id);
+    setSelectedAppIds(new Set(browserIds));
+    setStatus(`Đã chọn nhanh ${browserIds.length} trình duyệt có sẵn.`);
+  }
+
+  // Lưu cấu hình hiện tại thành Preset
+  function handleSavePreset() {
+    if (!newPresetName.trim()) {
+      setError("Vui lòng nhập tên cho kịch bản.");
+      return;
+    }
+    const newPreset = {
+      id: "custom-preset-" + Date.now(),
+      name: `${newPresetIcon} ${newPresetName.trim()}`,
+      desc: workflow === "multi" ? `Tổ hợp ${selectedAppIds.size} ứng dụng` : `Nhân bản ${count} cửa sổ ${currentTargetApp?.name || ""}`,
+      workflow,
+      appIds: workflow === "multi" ? Array.from(selectedAppIds) : undefined,
+      targetId: workflow === "single" ? targetAppId : undefined,
+      count,
+      mode,
+      grid,
+      profileMode,
+      urls,
+      isCustom: true
+    };
+    const updated = [...customPresets, newPreset];
+    setCustomPresets(updated);
+    localStorage.setItem(STORAGE_KEY_PRESETS, JSON.stringify(updated));
+    setShowSavePresetModal(false);
+    setNewPresetName("");
+    setStatus(`Đã lưu kịch bản mới: ${newPreset.name}`);
+  }
+
+  // Xóa Preset người dùng
+  function handleDeletePreset(e, id) {
+    e.stopPropagation();
+    const updated = customPresets.filter((p) => p.id !== id);
+    setCustomPresets(updated);
+    localStorage.setItem(STORAGE_KEY_PRESETS, JSON.stringify(updated));
+    setStatus("Đã xóa kịch bản tùy chỉnh.");
   }
 
   // Áp dụng Preset
@@ -357,10 +493,25 @@ export default function App() {
     setStatus(`Đã tải kịch bản: ${p.name}`);
   }
 
+  // Combo: Chạy và tự chia lưới
+  async function handleComboLaunchAndGrid() {
+    await handleStart({ autoArrange: true, autoSync: false });
+  }
+
+  // Combo: Chạy, chia lưới và kích hoạt Sync chuột
+  async function handleComboLaunchAndSync() {
+    await handleStart({ autoArrange: true, autoSync: true });
+  }
+
   // Bắt đầu khởi chạy
-  async function handleStart() {
+  async function handleStart(comboOptions = null) {
     setError("");
     setRunning(true);
+    if (comboOptions) {
+      pendingComboRef.current = comboOptions;
+    } else {
+      pendingComboRef.current = null;
+    }
 
     if (workflow === "multi") {
       const chosenApps = apps.filter((a) => selectedAppIds.has(a.id) && a.available);
@@ -379,7 +530,7 @@ export default function App() {
         delayMs,
         urls,
         browserMode: mode,
-        grid,
+        grid: comboOptions?.autoArrange ? true : grid,
         profileMode
       });
 
@@ -406,7 +557,7 @@ export default function App() {
         delayMs,
         urls,
         mode,
-        grid,
+        grid: comboOptions?.autoArrange ? true : grid,
         profileMode
       });
 
@@ -454,8 +605,26 @@ export default function App() {
             style={{ cursor: "pointer" }}
             title="Bấm để Bật/Tắt nhanh đồng bộ chuột (Phím tắt: F8)"
           >
-            {syncActive ? `🟢 Đang đồng bộ chuột (${syncCount} tab)` : "⚪ Chuột độc lập (F8)"}
+            {syncActive ? `🟢 Đang đồng bộ (${syncCount} tab)` : "⚪ Chuột độc lập (F8)"}
           </span>
+
+          <button
+            type="button"
+            className="pill action-pill"
+            onClick={handleCloseAllTarget}
+            title="Đóng sạch tất cả các cửa sổ mục tiêu đang mở để dọn workspace"
+          >
+            🛑 Đóng nhanh tab
+          </button>
+
+          <button
+            type="button"
+            className="pill action-pill"
+            onClick={handleOpenProfilesFolder}
+            title="Mở thư mục lưu trữ profile độc lập (%TEMP%/multi_launcher_profiles)"
+          >
+            📁 Thư mục Profiles
+          </button>
 
           <span className="pill ok" title="Số lượng ứng dụng đã được tự động phát hiện trên máy tính">
             {availableCount} ứng dụng sẵn sàng
@@ -465,7 +634,19 @@ export default function App() {
 
       {/* Kịch bản mẫu (Presets) */}
       <section className="presets-bar">
-        <span className="preset-label">⚡ Kịch bản nhanh:</span>
+        <div className="presets-header">
+          <span className="preset-label">⚡ Kịch bản nhanh (Presets):</span>
+          <button
+            type="button"
+            className="save-preset-btn"
+            onClick={() => setShowSavePresetModal(true)}
+            disabled={running}
+            title="Lưu cấu hình hiện tại thành kịch bản của riêng bạn"
+          >
+            💾 + Lưu kịch bản hiện tại
+          </button>
+        </div>
+
         <div className="preset-chips">
           {BUILTIN_PRESETS.map((p) => (
             <button
@@ -478,6 +659,73 @@ export default function App() {
               {p.name}
             </button>
           ))}
+          {customPresets.map((p) => (
+            <div key={p.id} className="preset-chip-wrapper">
+              <button
+                key={p.id}
+                className="preset-btn custom-preset-btn"
+                onClick={() => applyPreset(p)}
+                disabled={running}
+                title={p.desc}
+              >
+                {p.name}
+              </button>
+              <button
+                type="button"
+                className="delete-preset-chip"
+                onClick={(e) => handleDeletePreset(e, p.id)}
+                title="Xóa kịch bản tùy chỉnh này"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Thanh Tác Vụ Kết Hợp Nhanh (Quick Combos) */}
+      <section className="combos-bar">
+        <div className="combo-group">
+          <span className="combo-title">⚡ Tác vụ kết hợp nhanh:</span>
+          <button
+            type="button"
+            className="combo-btn run-grid-btn"
+            onClick={handleComboLaunchAndGrid}
+            disabled={running || (workflow === "multi" ? selectedCount === 0 : !currentTargetApp?.available)}
+            title="Mở ứng dụng và tự động chia lưới vừa khít màn hình ngay khi hoàn thành"
+          >
+            🚀 Chạy & Chia Lưới
+          </button>
+
+          <button
+            type="button"
+            className="combo-btn run-sync-btn"
+            onClick={handleComboLaunchAndSync}
+            disabled={running || (workflow === "multi" ? selectedCount === 0 : !currentTargetApp?.available)}
+            title="Mở ứng dụng, tự động chia lưới và BẬT ngay tính năng đồng bộ chuột F8"
+          >
+            🎯 Chạy & Bật Sync F8
+          </button>
+
+          <button
+            type="button"
+            className="combo-btn close-all-btn"
+            onClick={handleCloseAllTarget}
+            disabled={running}
+            title="Đóng toàn bộ các cửa sổ của ứng dụng mục tiêu đang mở để dọn dẹp"
+          >
+            🛑 Đóng sạch cửa sổ
+          </button>
+
+          <button
+            type="button"
+            className="combo-btn paste-btn"
+            onClick={handlePasteClipboard}
+            disabled={running}
+            title="Đọc nhanh danh sách link từ Clipboard và dán vào ô URL"
+          >
+            📋 Dán URL Clipboard
+          </button>
         </div>
       </section>
 
@@ -572,9 +820,13 @@ export default function App() {
 
             {workflow === "multi" && (
               <div className="selection-quick">
-                <button onClick={handleSelectAll} disabled={running}>Chọn tất cả</button>
+                <button type="button" onClick={handleSelectAll} disabled={running}>Chọn tất cả</button>
                 <span>•</span>
-                <button onClick={handleDeselectAll} disabled={running}>Bỏ chọn</button>
+                <button type="button" onClick={handleDeselectAll} disabled={running}>Bỏ chọn</button>
+                <span>•</span>
+                <button type="button" onClick={handleInvertSelection} disabled={running} title="Đảo ngược lựa chọn">🔄 Đảo chọn</button>
+                <span>•</span>
+                <button type="button" onClick={handleSelectOnlyBrowsers} disabled={running} title="Chỉ chọn các trình duyệt có sẵn">🌐 Chỉ trình duyệt</button>
               </div>
             )}
           </div>
@@ -737,6 +989,34 @@ export default function App() {
             </span>
           </label>
         )}
+
+        {/* Thanh công cụ bố cục màn hình */}
+        <div className="layout-toolbar">
+          <span className="layout-toolbar-title">📐 Bố cục màn hình nhanh:</span>
+          <div className="layout-btn-group">
+            <button type="button" className="layout-btn" onClick={() => handleArrangeWithLayout("auto")} title="Tự động chia đều diện tích màn hình theo tỷ lệ tối ưu">
+              🔲 Tự động
+            </button>
+            <button type="button" className="layout-btn" onClick={() => handleArrangeWithLayout("split-2")} title="Chia đôi màn hình thành 2 cột (50% - 50%)">
+              ◫ 2 Cột (50/50)
+            </button>
+            <button type="button" className="layout-btn" onClick={() => handleArrangeWithLayout("split-3")} title="Chia màn hình thành 3 cột đều nhau">
+              ▥ 3 Cột
+            </button>
+            <button type="button" className="layout-btn" onClick={() => handleArrangeWithLayout("grid-2x2")} title="Chia thành lưới 4 góc (2 hàng, 2 cột)">
+              ⊞ 4 Ô (2x2)
+            </button>
+            <button type="button" className="layout-btn" onClick={() => handleArrangeWithLayout("grid-3x2")} title="Chia thành lưới 6 ô (2 hàng, 3 cột)">
+              ▦ 6 Ô (3x2)
+            </button>
+            <button type="button" className="layout-btn" onClick={() => handleArrangeWithLayout("minimize")} title="Thu nhỏ tất cả cửa sổ mục tiêu">
+              🗕 Thu nhỏ
+            </button>
+            <button type="button" className="layout-btn" onClick={() => handleArrangeWithLayout("restore")} title="Khôi phục và hiển thị lại toàn bộ các cửa sổ">
+              🗖 Khôi phục
+            </button>
+          </div>
+        </div>
       </section>
 
       {/* Bước 4: Đồng bộ thao tác chuột (Mouse Synchronizer) */}
@@ -800,23 +1080,43 @@ export default function App() {
         <div className="actions">
           <button
             className="primary"
-            onClick={handleStart}
+            onClick={() => handleStart()}
             disabled={running || (workflow === "multi" ? selectedCount === 0 : !currentTargetApp?.available)}
           >
-            ▶ &nbsp; {workflow === "multi" ? `Bắt đầu mở ${selectedCount} ứng dụng` : `Bắt đầu mở ${currentTargetApp ? currentTargetApp.name : "ứng dụng"}`}
+            ▶ &nbsp; {workflow === "multi" ? `Khởi chạy ${selectedCount} app` : `Khởi chạy ${currentTargetApp ? currentTargetApp.name : "app"}`}
+          </button>
+
+          <button
+            type="button"
+            className="secondary run-grid-btn"
+            onClick={handleComboLaunchAndGrid}
+            disabled={running || (workflow === "multi" ? selectedCount === 0 : !currentTargetApp?.available)}
+            title="Mở ứng dụng và tự động chia lưới vừa khít màn hình khi mở xong"
+          >
+            🚀 Chạy & Chia lưới
+          </button>
+
+          <button
+            type="button"
+            className="secondary run-sync-btn"
+            onClick={handleComboLaunchAndSync}
+            disabled={running || (workflow === "multi" ? selectedCount === 0 : !currentTargetApp?.available)}
+            title="Mở ứng dụng, tự động chia lưới và BẬT ngay tính năng đồng bộ chuột F8"
+          >
+            🎯 Chạy & Sync F8
           </button>
           
           <button
             type="button"
             className="secondary arrange-btn"
-            onClick={handleArrangeNow}
+            onClick={() => handleArrangeWithLayout("auto")}
             title="Căn chỉnh lại toàn bộ cửa sổ đang hiển thị vừa khít với màn hình máy tính"
           >
-            📐 Căn chỉnh cửa sổ ngay
+            📐 Chia lưới
           </button>
 
           <button className="secondary stop-btn" onClick={handleStop} disabled={!running}>
-            ■ &nbsp; Dừng lại (Esc)
+            ■ &nbsp; Dừng (Esc)
           </button>
         </div>
 
@@ -824,6 +1124,56 @@ export default function App() {
           Mẹo: Sau khi mở nhiều cửa sổ và căn chỉnh vừa màn hình, bạn có thể bấm <strong>"BẬT ĐỒNG BỘ CHUỘT"</strong> (hoặc nhấn phím <strong>F8</strong> trên bàn phím) để bắt đầu điều khiển chuột chung cho tất cả các tab!
         </p>
       </section>
+
+      {/* Modal Popup Lưu Kịch Bản */}
+      {showSavePresetModal && (
+        <div className="modal-overlay" onClick={() => setShowSavePresetModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>💾 Lưu cấu hình hiện tại thành Kịch bản</h3>
+            <p>Kịch bản sẽ ghi nhớ chế độ mở, các ứng dụng đã chọn, số lượng, bố cục và danh sách URL để bạn mở lại nhanh bất cứ lúc nào.</p>
+
+            <div className="modal-field">
+              <label>Biểu tượng:</label>
+              <div className="icon-selector">
+                {["⚡", "💼", "🌐", "🎮", "💻", "🔥", "🚀", "📊", "🤖", "⭐"].map((ic) => (
+                  <button
+                    key={ic}
+                    type="button"
+                    className={`icon-choice ${newPresetIcon === ic ? "selected" : ""}`}
+                    onClick={() => setNewPresetIcon(ic)}
+                  >
+                    {ic}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="modal-field">
+              <label>Tên kịch bản:</label>
+              <input
+                type="text"
+                value={newPresetName}
+                onChange={(e) => setNewPresetName(e.target.value)}
+                placeholder="Ví dụ: Cày 4 acc Facebook, Dự án Web, MMO Chrome..."
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSavePreset();
+                  if (e.key === "Escape") setShowSavePresetModal(false);
+                }}
+              />
+            </div>
+
+            <div className="modal-actions">
+              <button type="button" className="secondary" onClick={() => setShowSavePresetModal(false)}>
+                Hủy bỏ
+              </button>
+              <button type="button" className="primary" onClick={handleSavePreset}>
+                Lưu kịch bản
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <footer>
         Multi Launcher Pro <span>•</span> Electron + React <span>•</span> Quản lý & Khởi chạy đa ứng dụng Windows <span>•</span> Hỗ trợ F8 Mouse Sync & Multi-Profiles
