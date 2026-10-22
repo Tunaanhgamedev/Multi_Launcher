@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef, memo } from "react";
 
 const DEFAULT_URLS = "https://www.google.com";
 const STORAGE_KEY_CUSTOM_APPS = "multi_launcher_custom_apps";
@@ -40,6 +40,70 @@ const BUILTIN_PRESETS = [
     urls: "https://www.google.com"
   }
 ];
+
+/**
+ * Thẻ ứng dụng được Memo hóa để tránh render lại toàn bộ danh sách khi tiến trình cập nhật
+ */
+const AppCard = memo(function AppCard({
+  appItem,
+  isSelected,
+  workflow,
+  running,
+  onSelect,
+  onDeleteCustom
+}) {
+  return (
+    <div
+      className={`app-card ${isSelected ? "selected" : ""} ${!appItem.available ? "unavailable" : ""}`}
+      onClick={() => {
+        if (!appItem.available || running) return;
+        onSelect(appItem.id);
+      }}
+    >
+      <div className="app-card-header">
+        <span className="app-icon">{appItem.icon || "📦"}</span>
+        <div className="app-meta">
+          <strong className="app-title">{appItem.name}</strong>
+          <span className="app-category">{appItem.category}</span>
+        </div>
+
+        {appItem.isCustom && (
+          <button
+            className="delete-custom-btn"
+            title="Xóa ứng dụng này khỏi danh sách"
+            onClick={(e) => onDeleteCustom(e, appItem.id)}
+          >
+            ✕
+          </button>
+        )}
+      </div>
+
+      <div className="app-card-footer">
+        <span className={`status-badge ${appItem.available ? "ready" : "missing"}`}>
+          {appItem.available ? "Sẵn sàng" : "Chưa cài đặt"}
+        </span>
+
+        <span className="card-selector">
+          {workflow === "multi" ? (
+            <input
+              type="checkbox"
+              checked={isSelected}
+              disabled={!appItem.available || running}
+              onChange={() => {}}
+            />
+          ) : (
+            <input
+              type="radio"
+              checked={isSelected}
+              disabled={!appItem.available || running}
+              onChange={() => {}}
+            />
+          )}
+        </span>
+      </div>
+    </div>
+  );
+});
 
 export default function App() {
   const [workflow, setWorkflow] = useState("multi"); // "multi": Tổ hợp nhiều app, "single": Hàng loạt 1 app
@@ -293,12 +357,14 @@ export default function App() {
   }
 
   // Xóa ứng dụng tự thêm
-  function handleDeleteCustomApp(e, appId) {
+  const handleDeleteCustomApp = useCallback((e, appId) => {
     e.stopPropagation();
-    const updated = apps.filter((a) => a.id !== appId);
-    setApps(updated);
-    const customOnly = updated.filter((a) => a.isCustom);
-    localStorage.setItem(STORAGE_KEY_CUSTOM_APPS, JSON.stringify(customOnly));
+    setApps((prevApps) => {
+      const updated = prevApps.filter((a) => a.id !== appId);
+      const customOnly = updated.filter((a) => a.isCustom);
+      localStorage.setItem(STORAGE_KEY_CUSTOM_APPS, JSON.stringify(customOnly));
+      return updated;
+    });
 
     setSelectedAppIds((prev) => {
       const next = new Set(prev);
@@ -306,21 +372,32 @@ export default function App() {
       return next;
     });
 
-    if (targetAppId === appId) {
-      const fallback = updated.find((a) => a.available);
-      if (fallback) setTargetAppId(fallback.id);
-    }
-  }
+    setTargetAppId((prev) => {
+      if (prev === appId) {
+        return "";
+      }
+      return prev;
+    });
+  }, []);
 
   // Chọn/bỏ chọn app trong chế độ Multi
-  function toggleAppSelection(appId) {
+  const toggleAppSelection = useCallback((appId) => {
     setSelectedAppIds((prev) => {
       const next = new Set(prev);
       if (next.has(appId)) next.delete(appId);
       else next.add(appId);
       return next;
     });
-  }
+  }, []);
+
+  // Xử lý chọn card ứng dụng (hỗ trợ cả multi và single)
+  const handleCardSelect = useCallback((appId) => {
+    if (workflow === "multi") {
+      toggleAppSelection(appId);
+    } else {
+      setTargetAppId(appId);
+    }
+  }, [workflow, toggleAppSelection]);
 
   function handleSelectAll() {
     const availableIds = filteredApps.filter((a) => a.available).map((a) => a.id);
@@ -843,60 +920,15 @@ export default function App() {
             filteredApps.map((appItem) => {
               const isSelected = workflow === "multi" ? selectedAppIds.has(appItem.id) : targetAppId === appItem.id;
               return (
-                <div
+                <AppCard
                   key={appItem.id}
-                  className={`app-card ${isSelected ? "selected" : ""} ${!appItem.available ? "unavailable" : ""}`}
-                  onClick={() => {
-                    if (!appItem.available || running) return;
-                    if (workflow === "multi") {
-                      toggleAppSelection(appItem.id);
-                    } else {
-                      setTargetAppId(appItem.id);
-                    }
-                  }}
-                >
-                  <div className="app-card-header">
-                    <span className="app-icon">{appItem.icon || "📦"}</span>
-                    <div className="app-meta">
-                      <strong className="app-title">{appItem.name}</strong>
-                      <span className="app-category">{appItem.category}</span>
-                    </div>
-
-                    {appItem.isCustom && (
-                      <button
-                        className="delete-custom-btn"
-                        title="Xóa ứng dụng này khỏi danh sách"
-                        onClick={(e) => handleDeleteCustomApp(e, appItem.id)}
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="app-card-footer">
-                    <span className={`status-badge ${appItem.available ? "ready" : "missing"}`}>
-                      {appItem.available ? "Sẵn sàng" : "Chưa cài đặt"}
-                    </span>
-
-                    <span className="card-selector">
-                      {workflow === "multi" ? (
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          disabled={!appItem.available || running}
-                          onChange={() => {}}
-                        />
-                      ) : (
-                        <input
-                          type="radio"
-                          checked={isSelected}
-                          disabled={!appItem.available || running}
-                          onChange={() => {}}
-                        />
-                      )}
-                    </span>
-                  </div>
-                </div>
+                  appItem={appItem}
+                  isSelected={isSelected}
+                  workflow={workflow}
+                  running={running}
+                  onSelect={handleCardSelect}
+                  onDeleteCustom={handleDeleteCustomApp}
+                />
               );
             })
           )}

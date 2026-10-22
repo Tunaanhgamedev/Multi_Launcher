@@ -122,26 +122,22 @@ public class MouseSyncService {
   public static uint LauncherPid = 0;
   public static int LastReportedCount = -1;
   private static bool _isSyncing = false;
+  private static readonly StringBuilder _titleBuffer = new StringBuilder(512);
 
   public static bool IsMultiLauncher(IntPtr hWnd) {
     if (hWnd == IntPtr.Zero) return false;
-    try {
-      uint pid = 0;
-      GetWindowThreadProcessId(hWnd, out pid);
-      if (LauncherPid != 0 && pid == LauncherPid) return true;
+    uint pid = 0;
+    GetWindowThreadProcessId(hWnd, out pid);
+    if (LauncherPid != 0 && pid == LauncherPid) return true;
 
-      if (pid != 0) {
-        Process p = Process.GetProcessById((int)pid);
-        string name = p.ProcessName.ToLowerInvariant();
-        if (name.Contains("multi launcher") || name.Contains("electron")) return true;
+    // Kiểm tra tiêu đề cửa sổ cực nhanh qua buffer tĩnh
+    lock (_titleBuffer) {
+      _titleBuffer.Length = 0;
+      GetWindowText(hWnd, _titleBuffer, _titleBuffer.Capacity);
+      string title = _titleBuffer.ToString();
+      if (!string.IsNullOrEmpty(title) && title.IndexOf("Multi Launcher", StringComparison.OrdinalIgnoreCase) >= 0) {
+        return true;
       }
-    } catch {}
-
-    StringBuilder sb = new StringBuilder(512);
-    GetWindowText(hWnd, sb, sb.Capacity);
-    string title = sb.ToString();
-    if (!string.IsNullOrEmpty(title) && title.IndexOf("Multi Launcher", StringComparison.OrdinalIgnoreCase) >= 0) {
-      return true;
     }
     return false;
   }
@@ -152,9 +148,13 @@ public class MouseSyncService {
       if (!IsWindow(hWnd) || !IsWindowVisible(hWnd) || IsIconic(hWnd)) return true;
       if (IsMultiLauncher(hWnd)) return true;
 
-      StringBuilder sb = new StringBuilder(512);
-      GetWindowText(hWnd, sb, sb.Capacity);
-      string title = sb.ToString();
+      string title = "";
+      lock (_titleBuffer) {
+        _titleBuffer.Length = 0;
+        GetWindowText(hWnd, _titleBuffer, _titleBuffer.Capacity);
+        title = _titleBuffer.ToString();
+      }
+
       if (!string.IsNullOrEmpty(title) && title != "Program Manager") {
         bool isMatch = false;
         try {
@@ -309,7 +309,7 @@ $count = [MouseSyncService]::StartHook($pattern, [uint32]$launcherPid)
 Write-Output "READY: $count"
 
 $timer = New-Object System.Windows.Forms.Timer
-$timer.Interval = 1500
+$timer.Interval = 2000
 $timer.add_Tick({
   [void][MouseSyncService]::RefreshWindows()
 })
