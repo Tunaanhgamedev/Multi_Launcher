@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld("launcher", {
   arrangeWindows: (pattern, layout) => ipcRenderer.invoke("launcher:arrange-windows", pattern, layout),
   closeTargetWindows: (pattern) => ipcRenderer.invoke("launcher:close-target-windows", pattern),
   openProfilesFolder: () => ipcRenderer.invoke("launcher:open-profiles-folder"),
+  cleanProfiles: () => ipcRenderer.invoke("launcher:clean-profiles"),
   readClipboard: () => ipcRenderer.invoke("launcher:read-clipboard"),
   toggleMouseSync: (pattern) => ipcRenderer.invoke("launcher:toggle-mouse-sync", pattern),
   getMouseSyncStatus: () => ipcRenderer.invoke("launcher:get-mouse-sync-status"),

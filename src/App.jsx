@@ -3,8 +3,22 @@ import { useEffect, useState, useMemo, useCallback, useRef, memo } from "react";
 const DEFAULT_URLS = "https://www.google.com";
 const STORAGE_KEY_CUSTOM_APPS = "multi_launcher_custom_apps";
 const STORAGE_KEY_PRESETS = "multi_launcher_saved_presets";
+const STORAGE_KEY_PROXIES = "multi_launcher_saved_proxies";
 
 const BUILTIN_PRESETS = [
+  {
+    id: "facebook-shield",
+    name: "🛡️ Facebook Đa Nick (Màn Chắn Anti-Detect)",
+    desc: "Mở 4 cửa sổ Facebook với Màn chắn chống quét, vân tay Canvas, WebGL, Audio & CPU/RAM riêng biệt",
+    workflow: "single",
+    targetId: "chrome",
+    count: 4,
+    mode: "windows",
+    grid: true,
+    profileMode: "shield",
+    antiDetectShield: true,
+    urls: "https://www.facebook.com"
+  },
   {
     id: "work",
     name: "💼 Không gian làm việc",
@@ -13,6 +27,8 @@ const BUILTIN_PRESETS = [
     appIds: ["chrome", "vscode", "notepad", "zalo"],
     mode: "windows",
     grid: true,
+    profileMode: "normal",
+    antiDetectShield: false,
     urls: "https://mail.google.com\nhttps://github.com"
   },
   {
@@ -25,6 +41,7 @@ const BUILTIN_PRESETS = [
     mode: "windows",
     grid: true,
     profileMode: "normal",
+    antiDetectShield: false,
     urls: "https://www.google.com\nhttps://www.youtube.com\nhttps://github.com\nhttps://reddit.com"
   },
   {
@@ -36,7 +53,8 @@ const BUILTIN_PRESETS = [
     count: 4,
     mode: "windows",
     grid: true,
-    profileMode: "isolated",
+    profileMode: "shield",
+    antiDetectShield: true,
     urls: "https://www.google.com"
   }
 ];
@@ -122,7 +140,25 @@ export default function App() {
   const [delayMs, setDelayMs] = useState(1000);
   const [urls, setUrls] = useState(DEFAULT_URLS);
   const [grid, setGrid] = useState(true);
-  const [profileMode, setProfileMode] = useState("normal"); // 'normal' | 'incognito' | 'isolated'
+  const [profileMode, setProfileMode] = useState("shield"); // 'shield' | 'isolated' | 'normal' | 'incognito'
+
+  // Màn chắn chống quét (Anti-Detect Shield) & Cấu hình Proxy
+  const [antiDetectShield, setAntiDetectShield] = useState(true);
+  const [proxies, setProxies] = useState(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEY_PROXIES) || "";
+    } catch {
+      return "";
+    }
+  });
+  const [proxyInputText, setProxyInputText] = useState("");
+  const [showProxyModal, setShowProxyModal] = useState(false);
+  const proxyCount = useMemo(() => {
+    return (proxies || "")
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean).length;
+  }, [proxies]);
 
   // Ghim cửa sổ Always on Top
   const [alwaysOnTop, setAlwaysOnTop] = useState(false);
@@ -513,6 +549,37 @@ export default function App() {
     setStatus(`Đã chọn nhanh ${browserIds.length} trình duyệt có sẵn.`);
   }
 
+  // Dọn dẹp sạch toàn bộ Profile & Vân tay thiết bị cũ
+  async function handleCleanProfiles() {
+    setError("");
+    setStatus("Đang dọn dẹp các thư mục profiles và làm mới dấu vân tay...");
+    try {
+      if (window.launcher.cleanProfiles) {
+        const res = await window.launcher.cleanProfiles();
+        if (res.ok) {
+          setStatus(res.message || "Đã làm sạch toàn bộ dữ liệu Profiles thành công.");
+        } else {
+          setError(res.error || "Không thể dọn dẹp profiles.");
+        }
+      }
+    } catch (e) {
+      setError("Lỗi dọn dẹp profiles: " + e.message);
+    }
+  }
+
+  function handleOpenProxyModal() {
+    setProxyInputText(proxies);
+    setShowProxyModal(true);
+  }
+
+  function handleSaveProxies() {
+    const trimmed = proxyInputText.trim();
+    setProxies(trimmed);
+    localStorage.setItem(STORAGE_KEY_PROXIES, trimmed);
+    setShowProxyModal(false);
+    setStatus(`Đã lưu danh sách Proxy (${trimmed ? trimmed.split(/\r?\n/).filter(Boolean).length : 0} proxy).`);
+  }
+
   // Lưu cấu hình hiện tại thành Preset
   function handleSavePreset() {
     if (!newPresetName.trim()) {
@@ -530,6 +597,8 @@ export default function App() {
       mode,
       grid,
       profileMode,
+      antiDetectShield,
+      proxies,
       urls,
       isCustom: true
     };
@@ -559,6 +628,8 @@ export default function App() {
     if (p.urls) setUrls(p.urls);
     if (p.count) setCount(p.count);
     if (p.profileMode) setProfileMode(p.profileMode);
+    if (p.antiDetectShield !== undefined) setAntiDetectShield(p.antiDetectShield);
+    if (p.proxies !== undefined) setProxies(p.proxies);
 
     if (p.workflow === "single" && p.targetId) {
       const found = apps.find((a) => a.id === p.targetId && a.available) || apps.find((a) => a.available);
@@ -608,7 +679,9 @@ export default function App() {
         urls,
         browserMode: mode,
         grid: comboOptions?.autoArrange ? true : grid,
-        profileMode
+        profileMode,
+        antiDetectShield,
+        proxies
       });
 
       if (!result.ok) {
@@ -635,7 +708,9 @@ export default function App() {
         urls,
         mode,
         grid: comboOptions?.autoArrange ? true : grid,
-        profileMode
+        profileMode,
+        antiDetectShield,
+        proxies
       });
 
       if (!result.ok) {
@@ -764,6 +839,19 @@ export default function App() {
       <section className="combos-bar">
         <div className="combo-group">
           <span className="combo-title">⚡ Tác vụ kết hợp nhanh:</span>
+          <button
+            type="button"
+            className="combo-btn shield-combo-btn"
+            onClick={() => {
+              const fbPreset = BUILTIN_PRESETS.find((p) => p.id === "facebook-shield");
+              if (fbPreset) applyPreset(fbPreset);
+            }}
+            disabled={running}
+            title="Nạp ngay cấu hình Facebook Đa Nick kèm Màn Chắn Chống Quét & Vân tay độc lập"
+          >
+            🛡️ Facebook Shield
+          </button>
+
           <button
             type="button"
             className="combo-btn run-grid-btn"
@@ -987,9 +1075,20 @@ export default function App() {
           {/* Tách biệt Profile độc lập */}
           <label className="field">
             <span>Chế độ Profile / Cookie (Trình duyệt)</span>
-            <select value={profileMode} disabled={running} onChange={(e) => setProfileMode(e.target.value)}>
-              <option value="normal">Mặc định (Dùng chung Profile chính)</option>
+            <select
+              value={profileMode}
+              disabled={running}
+              onChange={(e) => {
+                const nextMode = e.target.value;
+                setProfileMode(nextMode);
+                if (nextMode === "shield") {
+                  setAntiDetectShield(true);
+                }
+              }}
+            >
+              <option value="shield">🛡️ Màn Chắn Chống Quét (Khuyên dùng cho Facebook/Google/MMO)</option>
               <option value="isolated">⭐ Tách biệt Profile riêng (Mỗi cửa sổ 1 tài khoản/cookie riêng)</option>
+              <option value="normal">Mặc định (Dùng chung Profile chính)</option>
               <option value="incognito">Ẩn danh / Riêng tư (Incognito / InPrivate)</option>
             </select>
           </label>
@@ -1051,11 +1150,103 @@ export default function App() {
         </div>
       </section>
 
-      {/* Bước 4: Đồng bộ thao tác chuột (Mouse Synchronizer) */}
-      <section className={`panel sync-panel ${syncActive ? "sync-panel-active" : ""}`}>
+      {/* Bước 4: Màn Chắn Chống Quét & Vân Tay Thiết Bị (Anti-Detect Shield) */}
+      <section className={`panel shield-panel ${antiDetectShield ? "shield-panel-active" : ""}`}>
         <div className="section-heading">
           <div>
             <span className="step">04</span>
+            <h2>Màn Chắn Chống Quét & Vân Tay Thiết Bị (Anti-Detect Shield)</h2>
+          </div>
+          <span className={`pill ${antiDetectShield ? "pill-active shield-pill-active" : ""}`}>
+            {antiDetectShield ? "🛡️ ĐANG BẬT BẢO VỆ" : "⚪ Đang tắt màn chắn"}
+          </span>
+        </div>
+
+        <div className="shield-box">
+          <div className="shield-info">
+            <div className="shield-title-row">
+              <strong>
+                {antiDetectShield
+                  ? "🛡️ Màn Chắn Anti-Detect Đang Bật: Đã kích hoạt bảo vệ vân tay đa tài khoản!"
+                  : "⚪ Màn Chắn Chống Quét đang tắt"}
+              </strong>
+            </div>
+            <small>
+              Giải pháp chuyên dụng khi chạy nhiều tài khoản Facebook, Google, TikTok trên cùng 1 máy tính. Hệ thống tự động tạo môi trường độc lập cho từng cửa sổ: ngẫu nhiên hóa Canvas, AudioContext, WebGL GPU (NVIDIA RTX/AMD/Intel), số nhân CPU, RAM, User-Agent, đồng thời xóa sạch cờ Chrome Automation (navigator.webdriver) và chặn rò rỉ IP qua WebRTC.
+            </small>
+
+            {/* Lưới các lớp bảo vệ */}
+            <div className="shield-features-grid">
+              <div className={`shield-feature-item ${antiDetectShield ? "active" : ""}`}>
+                <span className="feature-icon">🎭</span>
+                <div>
+                  <strong>Nhiễu Canvas & Audio</strong>
+                  <small>Mã băm Canvas/Âm thanh riêng biệt cho từng tab</small>
+                </div>
+              </div>
+              <div className={`shield-feature-item ${antiDetectShield ? "active" : ""}`}>
+                <span className="feature-icon">💻</span>
+                <div>
+                  <strong>Giả lập GPU & CPU/RAM</strong>
+                  <small>Mỗi tab 1 card đồ họa & thông số phần cứng riêng</small>
+                </div>
+              </div>
+              <div className={`shield-feature-item ${antiDetectShield ? "active" : ""}`}>
+                <span className="feature-icon">🤖</span>
+                <div>
+                  <strong>Ẩn dấu vết Automation</strong>
+                  <small>Xóa navigator.webdriver, chuẩn hóa người dùng thật</small>
+                </div>
+              </div>
+              <div className={`shield-feature-item ${antiDetectShield ? "active" : ""}`}>
+                <span className="feature-icon">🌐</span>
+                <div>
+                  <strong>Khóa rò rỉ WebRTC IP</strong>
+                  <small>Ngăn chặn website quét ra địa chỉ IP nội bộ</small>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="shield-actions-side">
+            <button
+              type="button"
+              className={`shield-toggle-btn ${antiDetectShield ? "active" : ""}`}
+              onClick={() => setAntiDetectShield((v) => !v)}
+              disabled={running}
+            >
+              <span className="shield-pulse-dot"></span>
+              {antiDetectShield ? "TẮT MÀN CHẮN" : "BẬT MÀN CHẮN CHỐNG QUÉT"}
+            </button>
+
+            <button
+              type="button"
+              className="shield-secondary-btn proxy-btn"
+              onClick={handleOpenProxyModal}
+              disabled={running}
+              title="Cấu hình danh sách Proxy cho từng tab cửa sổ"
+            >
+              🔌 {proxyCount > 0 ? `Đã cấu hình ${proxyCount} Proxy` : "Cấu hình Proxy riêng cho từng tab"}
+            </button>
+
+            <button
+              type="button"
+              className="shield-secondary-btn clean-btn"
+              onClick={handleCleanProfiles}
+              disabled={running}
+              title="Xóa toàn bộ cookie và cache cũ trong thư mục profiles để cấp danh tính mới toanh"
+            >
+              🧹 Làm mới Profile & Reset vân tay
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Bước 5: Đồng bộ thao tác chuột (Mouse Synchronizer) */}
+      <section className={`panel sync-panel ${syncActive ? "sync-panel-active" : ""}`}>
+        <div className="section-heading">
+          <div>
+            <span className="step">05</span>
             <h2>Đồng bộ thao tác chuột đa tab (Mouse Synchronizer)</h2>
           </div>
           <span className={`pill ${syncActive ? "pill-active" : ""}`}>
@@ -1088,11 +1279,11 @@ export default function App() {
         </div>
       </section>
 
-      {/* Bước 5: Trạng thái & Nút hành động */}
+      {/* Bước 6: Trạng thái & Nút hành động */}
       <section className="panel status-panel">
         <div className="section-heading">
           <div>
-            <span className="step">05</span>
+            <span className="step">06</span>
             <h2>Khởi chạy & Điều khiển</h2>
           </div>
           <strong className="counter">
@@ -1201,6 +1392,63 @@ export default function App() {
               </button>
               <button type="button" className="primary" onClick={handleSavePreset}>
                 Lưu kịch bản
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Cấu hình Proxy Riêng Từng Tab */}
+      {showProxyModal && (
+        <div className="modal-overlay" onClick={() => setShowProxyModal(false)}>
+          <div className="modal-content proxy-modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>🔌 Cấu hình Proxy riêng cho từng Tab / Cửa sổ</h3>
+            <p>
+              Nhập danh sách Proxy (mỗi dòng một Proxy). Khi mở nhiều cửa sổ, hệ thống sẽ tự động gán lần lượt từng Proxy cho từng cửa sổ để Facebook và các website nhận diện các tab đến từ các địa chỉ IP mạng hoàn toàn khác nhau.
+            </p>
+
+            <div className="modal-field">
+              <label>
+                Định dạng hỗ trợ: <code>IP:Port</code> hoặc <code>IP:Port:User:Pass</code> hoặc <code>socks5://IP:Port</code>
+              </label>
+              <textarea
+                rows="6"
+                value={proxyInputText}
+                onChange={(e) => setProxyInputText(e.target.value)}
+                placeholder={"192.168.1.100:8080\n192.168.1.101:8080\nsocks5://10.0.0.1:1080\nuser:pass@123.45.67.89:8080"}
+                autoFocus
+              />
+            </div>
+
+            <div className="proxy-hint-box">
+              <small>
+                💡 <strong>Mẹo an toàn Facebook/MMO:</strong> Kết hợp Màn Chắn Anti-Detect (đổi vân tay thiết bị & GPU) + Proxy riêng cho mỗi tab sẽ giúp Facebook xem mỗi tab là một máy tính vật lý riêng biệt ở một địa điểm khác nhau, giảm thiểu tối đa nguy cơ bị khóa tài khoản hoặc checkpoint.
+              </small>
+            </div>
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="secondary"
+                onClick={async () => {
+                  try {
+                    const res = await window.launcher.readClipboard();
+                    if (res && res.text) {
+                      setProxyInputText((prev) => (prev && prev.trim() ? `${prev.trim()}\n${res.text.trim()}` : res.text.trim()));
+                    }
+                  } catch {}
+                }}
+              >
+                📋 Dán từ Clipboard
+              </button>
+              <button type="button" className="secondary" onClick={() => setProxyInputText("")}>
+                Xóa hết
+              </button>
+              <button type="button" className="secondary" onClick={() => setShowProxyModal(false)}>
+                Hủy
+              </button>
+              <button type="button" className="primary" onClick={handleSaveProxies}>
+                Lưu danh sách Proxy
               </button>
             </div>
           </div>

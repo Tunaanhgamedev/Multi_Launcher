@@ -3,6 +3,7 @@ const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
+const { prepareShieldFlags, parseProxyList } = require("./stealth-shield.cjs");
 
 // Tối ưu hóa Chromium engine cho Electron UI: bật tăng tốc phần cứng GPU, rasterization và giảm độ trễ render
 app.commandLine.appendSwitch("enable-gpu-rasterization");
@@ -816,12 +817,26 @@ ipcMain.handle("launcher:close-target-windows", async (_event, pattern) => {
 });
 
 ipcMain.handle("launcher:open-profiles-folder", async () => {
-  const profileDir = path.join(os.tmpdir(), "multi_launcher_profiles");
+  const profileDir = path.join(app.getPath("userData"), "multi_profiles");
   if (!fs.existsSync(profileDir)) {
     fs.mkdirSync(profileDir, { recursive: true });
   }
   await shell.openPath(profileDir);
   return { ok: true, path: profileDir };
+});
+
+ipcMain.handle("launcher:clean-profiles", async () => {
+  const profileDir = path.join(app.getPath("userData"), "multi_profiles");
+  if (fs.existsSync(profileDir)) {
+    try {
+      fs.rmSync(profileDir, { recursive: true, force: true });
+      fs.mkdirSync(profileDir, { recursive: true });
+      return { ok: true, message: "Đã dọn dẹp sạch toàn bộ dữ liệu Profiles và làm mới dấu vân tay thiết bị." };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  }
+  return { ok: true, message: "Thư mục profiles đang trống." };
 });
 
 ipcMain.handle("launcher:read-clipboard", () => {
@@ -846,7 +861,9 @@ ipcMain.handle("launcher:start", async (_event, config) => {
 
   const modeType = config.modeType || "single-app"; // 'single-app' | 'multi-app'
   const delayMs = Math.max(0, Math.min(10000, Number(config.delayMs) || 0));
-  const profileMode = config.profileMode || "normal"; // 'normal' | 'incognito' | 'isolated'
+  const profileMode = config.profileMode || "normal"; // 'normal' | 'incognito' | 'isolated' | 'shield'
+  const isShieldActive = Boolean(config.antiDetectShield || profileMode === "shield");
+  const proxies = config.proxies || "";
 
   let workArea = { x: 0, y: 0, width: 1920, height: 1040 };
   try {
@@ -887,6 +904,7 @@ ipcMain.handle("launcher:start", async (_event, config) => {
         }
 
         let args = [];
+        let shieldInfo = null;
         if (currentApp.type === "browser") {
           const isFirefox = /firefox/i.test(currentApp.name || currentApp.path);
           const isEdge = /edge|msedge/i.test(currentApp.name || currentApp.path);
@@ -895,30 +913,51 @@ ipcMain.handle("launcher:start", async (_event, config) => {
           const url = urlList.length > 0 ? urlList[i % urlList.length] : "https://www.google.com";
 
           if (isFirefox) {
+            const isolatedDir = path.join(app.getPath("userData"), "multi_profiles", `firefox_profile_${i + 1}`);
+            if (!fs.existsSync(isolatedDir)) fs.mkdirSync(isolatedDir, { recursive: true });
+
             args = isWindowMode ? ["-new-window", url] : ["-new-tab", url];
-            if (profileMode === "incognito") args.unshift("-private-window");
-            else if (profileMode === "isolated") {
-              const isolatedDir = path.join(app.getPath("userData"), "multi_profiles", `firefox_profile_${i + 1}`);
-              if (!fs.existsSync(isolatedDir)) fs.mkdirSync(isolatedDir, { recursive: true });
+            if (profileMode === "incognito") {
+              args.unshift("-private-window");
+            } else if (profileMode === "isolated" || isShieldActive) {
               args.unshift("-no-remote", "-profile", isolatedDir);
+              if (isShieldActive) {
+                try {
+                  const userJs = path.join(isolatedDir, "user.js");
+                  fs.writeFileSync(userJs, 'user_pref("privacy.resistFingerprinting", true);\nuser_pref("media.peerconnection.enabled", false);\n', "utf8");
+                } catch {}
+              }
             }
           } else {
+            const isolatedDir = path.join(app.getPath("userData"), "multi_profiles", `profile_${i + 1}`);
+            if (!fs.existsSync(isolatedDir)) fs.mkdirSync(isolatedDir, { recursive: true });
+
+            let shieldFlags = [];
+            if (isShieldActive) {
+              try {
+                const prepared = prepareShieldFlags(isolatedDir, i, { proxies });
+                shieldFlags = prepared.flags;
+                shieldInfo = prepared.info;
+              } catch (e) {
+                console.error("Lỗi khởi tạo Màn Chắn:", e);
+              }
+            }
+
             args = isWindowMode
               ? [
                   "--new-window",
                   `--window-position=${bounds.x},${bounds.y}`,
                   `--window-size=${bounds.width},${bounds.height}`,
                   ...CHROMIUM_PERFORMANCE_FLAGS,
+                  ...shieldFlags,
                   url
                 ]
-              : ["--new-tab", ...CHROMIUM_PERFORMANCE_FLAGS, url];
+              : ["--new-tab", ...CHROMIUM_PERFORMANCE_FLAGS, ...shieldFlags, url];
 
             if (profileMode === "incognito") {
               if (isEdge) args.unshift("-inprivate");
               else args.unshift("--incognito");
-            } else if (profileMode === "isolated") {
-              const isolatedDir = path.join(app.getPath("userData"), "multi_profiles", `profile_${i + 1}`);
-              if (!fs.existsSync(isolatedDir)) fs.mkdirSync(isolatedDir, { recursive: true });
+            } else if (profileMode === "isolated" || isShieldActive) {
               args.unshift(`--user-data-dir=${isolatedDir}`);
             }
           }
@@ -928,11 +967,13 @@ ipcMain.handle("launcher:start", async (_event, config) => {
 
         launchAppProcess(currentApp.path, args);
         opened++;
+
+        const shieldTag = isShieldActive && shieldInfo ? ` (🛡️ Màn chắn #${i + 1})` : "";
         sendProgress({
           type: "progress",
           opened,
           total,
-          message: `Đã mở: ${currentApp.name} (${opened}/${total})`
+          message: `Đã mở: ${currentApp.name}${shieldTag} (${opened}/${total})`
         });
 
         const effectiveDelay = delayMs > 0 ? delayMs : 100;
@@ -997,35 +1038,56 @@ ipcMain.handle("launcher:start", async (_event, config) => {
       for (let i = 0; i < count; i++) {
         if (job.cancelled) break;
         let args = [];
-
+        let shieldInfo = null;
         if (isBrowser) {
           const url = urls[i];
           const bounds = calculateWindowBounds(count, i, workArea);
           if (isFirefox) {
+            const isolatedDir = path.join(app.getPath("userData"), "multi_profiles", `firefox_profile_${i + 1}`);
+            if (!fs.existsSync(isolatedDir)) fs.mkdirSync(isolatedDir, { recursive: true });
+
             args = mode === "windows" ? ["-new-window", url] : ["-new-tab", url];
-            if (profileMode === "incognito") args.unshift("-private-window");
-            else if (profileMode === "isolated") {
-              const isolatedDir = path.join(app.getPath("userData"), "multi_profiles", `firefox_profile_${i + 1}`);
-              if (!fs.existsSync(isolatedDir)) fs.mkdirSync(isolatedDir, { recursive: true });
+            if (profileMode === "incognito") {
+              args.unshift("-private-window");
+            } else if (profileMode === "isolated" || isShieldActive) {
               args.unshift("-no-remote", "-profile", isolatedDir);
+              if (isShieldActive) {
+                try {
+                  const userJs = path.join(isolatedDir, "user.js");
+                  fs.writeFileSync(userJs, 'user_pref("privacy.resistFingerprinting", true);\nuser_pref("media.peerconnection.enabled", false);\n', "utf8");
+                } catch {}
+              }
             }
           } else {
+            const isolatedDir = path.join(app.getPath("userData"), "multi_profiles", `profile_${i + 1}`);
+            if (!fs.existsSync(isolatedDir)) fs.mkdirSync(isolatedDir, { recursive: true });
+
+            let shieldFlags = [];
+            if (isShieldActive) {
+              try {
+                const prepared = prepareShieldFlags(isolatedDir, i, { proxies });
+                shieldFlags = prepared.flags;
+                shieldInfo = prepared.info;
+              } catch (e) {
+                console.error("Lỗi khởi tạo Màn Chắn:", e);
+              }
+            }
+
             args = mode === "windows"
               ? [
                   "--new-window",
                   `--window-position=${bounds.x},${bounds.y}`,
                   `--window-size=${bounds.width},${bounds.height}`,
                   ...CHROMIUM_PERFORMANCE_FLAGS,
+                  ...shieldFlags,
                   url
                 ]
-              : ["--new-tab", ...CHROMIUM_PERFORMANCE_FLAGS, url];
+              : ["--new-tab", ...CHROMIUM_PERFORMANCE_FLAGS, ...shieldFlags, url];
 
             if (profileMode === "incognito") {
               if (isEdge) args.unshift("-inprivate");
               else args.unshift("--incognito");
-            } else if (profileMode === "isolated") {
-              const isolatedDir = path.join(app.getPath("userData"), "multi_profiles", `profile_${i + 1}`);
-              if (!fs.existsSync(isolatedDir)) fs.mkdirSync(isolatedDir, { recursive: true });
+            } else if (profileMode === "isolated" || isShieldActive) {
               args.unshift(`--user-data-dir=${isolatedDir}`);
             }
           }
@@ -1035,11 +1097,15 @@ ipcMain.handle("launcher:start", async (_event, config) => {
 
         launchAppProcess(targetApp.path, args);
         opened++;
+
+        const shieldTag = isShieldActive && shieldInfo
+          ? ` • 🛡️ Màn chắn vân tay #${i + 1} (${shieldInfo.proxy ? "Proxy: Bật" : "Hardware: Riêng"})`
+          : "";
         sendProgress({
           type: "progress",
           opened,
           total: count,
-          message: `Đã mở ${targetApp.name} (${opened}/${count})`
+          message: `Đã mở ${targetApp.name} (${opened}/${count})${shieldTag}`
         });
 
         const effectiveDelay = delayMs > 0 ? delayMs : 100;

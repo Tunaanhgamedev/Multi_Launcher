@@ -22,12 +22,18 @@
 - Căn chỉnh vừa khít 100% không gian làm việc (`WorkingArea`) của màn hình, loại bỏ tình trạng cửa sổ bị che khuất hoặc đè lên nhau.
 - Hỗ trợ nút **"Căn chỉnh ngay"**: Sắp xếp lại lưới bất cứ khi nào bạn mở thêm cửa sổ mới.
 
-### 4. 🛡️ Cách Ly Profile Đa Tài Khoản (MMO / Multi-Account Isolation)
-- **Bình thường**: Sử dụng profile mặc định của hệ thống.
-- **Ẩn danh (Incognito / InPrivate)**: Không lưu lịch sử, cookie hay cache.
-- **Cách ly tài khoản độc lập (Isolated Data-dir)**: Tự động cấp thư mục dữ liệu người dùng (`--user-data-dir`) riêng biệt cho từng cửa sổ. Cho phép đăng nhập đồng thời hàng loạt tài khoản Google, Facebook, sàn thương mại điện tử, game web/MMO mà không bị trùng lặp phiên hoặc xung đột cookie.
+### 4. 🛡️ Màn Chắn Chống Quét & Vân Tay Thiết Bị Độc Lập (Anti-Detect Shield Pro)
+Giải pháp chuyên sâu khi chạy đồng thời nhiều tài khoản **Facebook, Google, TikTok, Shopee, Telegram, MMO/Crypto** trên cùng một máy tính:
+- 🎭 **Nhiễu Vân Tay Canvas & Audio**: Tự động đưa nhiễu vi mô ngẫu nhiên vào kết quả dựng hình Canvas và AudioContext, đảm bảo mã hash vân tay giữa các cửa sổ là **hoàn toàn khác nhau**, ngăn thuật toán của Facebook gom nhóm thiết bị.
+- 💻 **Giả Lập GPU & Cấu Hình Phần Cứng (Hardware Spoofing)**: Mỗi cửa sổ được ngẫu nhiên hóa GPU WebGL (NVIDIA GeForce RTX 4070, RTX 3060, AMD Radeon, Intel Iris Xe...) cùng số nhân CPU (`hardwareConcurrency`: 4, 8, 12, 16) và dung lượng RAM (`deviceMemory`: 8, 16, 32 GB).
+- 🤖 **Xóa Sạch Dấu Vết Chrome Automation**: Loại bỏ cờ `--disable-blink-features=AutomationControlled` và xóa bỏ `navigator.webdriver`, biến phiên duyệt web thành người dùng thật 100%.
+- 🌐 **Khóa Rò Rỉ Địa Chỉ IP WebRTC**: Triệt tiêu hiện tượng STUN/TURN WebRTC làm lộ địa chỉ IP nội bộ mạng LAN của máy tính.
+- 🍪 **Cách Ly Dữ Liệu Profile Tuyệt Đối**: Cấp thư mục dữ liệu người dùng (`--user-data-dir`) độc lập cho từng tab, không chia sẻ Cookie, Session, Cache hay LocalStorage.
+- 🔌 **Hỗ Trợ Proxy Riêng Biệt Cho Từng Cửa Sổ**: Tự động phân bổ danh sách Proxy (`IP:Port`, `socks5://...`, hoặc có xác thực `user:pass`) cho từng cửa sổ. Facebook sẽ thấy mỗi tab là một người dùng ở một địa điểm mạng và phần cứng hoàn toàn khác nhau.
+- 🧹 **Nút Làm Mới Profile & Reset Vân Tay**: Xóa sạch phiên cũ trong 1 click để cấp bộ danh tính thiết bị mới toanh.
 
 ### 5. ⚡ Thanh Tác Vụ Kết Hợp Nhanh (Quick Combos Ribbon)
+- **🛡️ Facebook Shield**: 1 click nạp ngay kịch bản Facebook an toàn với Màn chắn Anti-Detect & Vân tay độc lập.
 - **🚀 Chạy & Chia Lưới**: Tự động mở toàn bộ ứng dụng rồi tự căn chỉnh lưới vừa khít màn hình ngay khi mở xong, không cần bấm thêm nút nào.
 - **🎯 Chạy & Bật Sync F8**: Quy trình tự động trọn gói: Mở ứng dụng ➔ Căn chỉnh lưới ➔ BẬT ngay tính năng đồng bộ chuột F8.
 - **🛑 Đóng sạch cửa sổ mục tiêu**: Đóng toàn bộ các tab hoặc cửa sổ ứng dụng mục tiêu đang mở chỉ với 1 click bằng tín hiệu Win32 `WM_CLOSE` an toàn, dọn sạch không gian làm việc tức thì.

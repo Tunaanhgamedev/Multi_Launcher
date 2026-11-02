@@ -1292,3 +1292,246 @@ footer span {
   font-weight: 600;
   cursor: pointer;
 }
+
+/* ========================================================
+   MÀN CHẮN CHỐNG QUÉT & BẢO VỆ ĐA TÀI KHOẢN (ANTI-DETECT SHIELD)
+   ======================================================== */
+.shield-combo-btn {
+  background: linear-gradient(135deg, #103233, #0a1f28) !important;
+  border-color: #0d8376 !important;
+  color: #38ef7d !important;
+  font-weight: 700 !important;
+  box-shadow: 0 4px 14px rgba(13, 131, 118, 0.25) !important;
+}
+.shield-combo-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #164344, #0f2c39) !important;
+  border-color: #1fe5cf !important;
+  color: #72ff9f !important;
+}
+
+.shield-panel {
+  transition: all 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.shield-panel-active {
+  border-color: #0e8774;
+  box-shadow: 0 0 28px rgba(14, 135, 116, 0.22), 0 10px 35px rgba(0, 0, 0, 0.25);
+  background: linear-gradient(145deg, #0f2422, #0d1a24);
+}
+
+.shield-pill-active {
+  color: #3bf3b6 !important;
+  background: #0d3830 !important;
+  border-color: #128768 !important;
+  box-shadow: 0 0 14px rgba(18, 135, 104, 0.4) !important;
+}
+
+.shield-box {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px solid #273746;
+  background: #0d141e;
+  flex-wrap: wrap;
+}
+
+.shield-panel-active .shield-box {
+  border-color: #13554b;
+  background: #081717;
+}
+
+.shield-info {
+  flex: 1;
+  min-width: 290px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shield-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shield-title-row strong {
+  font-size: 13px;
+  color: #eff6ff;
+}
+
+.shield-info small {
+  font-size: 10.5px;
+  color: #8fa1b8;
+  line-height: 1.5;
+}
+
+/* Lưới các lớp bảo vệ */
+.shield-features-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.shield-feature-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  background: #111a26;
+  border: 1px solid #243447;
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+
+.shield-feature-item.active {
+  background: #0d2122;
+  border-color: #136657;
+}
+
+.shield-feature-item .feature-icon {
+  font-size: 16px;
+}
+
+.shield-feature-item strong {
+  display: block;
+  font-size: 11px;
+  color: #e2eaf5;
+}
+
+.shield-feature-item small {
+  font-size: 9.5px;
+  color: #7b8ea6;
+  display: block;
+  line-height: 1.25;
+}
+
+/* Cột nút hành động của Shield */
+.shield-actions-side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 210px;
+  justify-content: center;
+}
+
+.shield-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #137767;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #104840, #0c2d33);
+  color: #4efcd2;
+  padding: 12px 16px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  box-shadow: 0 4px 16px rgba(16, 72, 64, 0.4);
+}
+
+.shield-toggle-btn:hover:not(:disabled) {
+  filter: brightness(1.2);
+  transform: translateY(-1px);
+}
+
+.shield-toggle-btn.active {
+  border-color: #1fe5cf;
+  background: linear-gradient(135deg, #0e6c5c, #0a463c);
+  color: #ffffff;
+  box-shadow: 0 4px 20px rgba(31, 229, 207, 0.35);
+}
+
+.shield-pulse-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #1fe5cf;
+  box-shadow: 0 0 8px #1fe5cf;
+  animation: pulse-dot 1.2s infinite alternate;
+}
+
+.shield-secondary-btn {
+  background: #141c28;
+  border: 1px solid #28374a;
+  border-radius: 8px;
+  color: #a4b6cd;
+  padding: 8px 12px;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.shield-secondary-btn:hover:not(:disabled) {
+  background: #1c2738;
+  border-color: #425875;
+  color: #e5edf7;
+  transform: translateY(-1px);
+}
+
+.proxy-btn {
+  border-color: #27495e;
+  color: #79c7f7;
+}
+.proxy-btn:hover:not(:disabled) {
+  border-color: #3b7497;
+  background: #112836;
+  color: #aae0ff;
+}
+
+.clean-btn {
+  border-color: #4a332d;
+  color: #f7a88b;
+}
+.clean-btn:hover:not(:disabled) {
+  border-color: #7a4a3e;
+  background: #2a1b18;
+  color: #ffd0c2;
+}
+
+/* Modal Proxy */
+.proxy-modal-content {
+  max-width: 520px !important;
+}
+
+.proxy-hint-box {
+  background: #101924;
+  border: 1px solid #233547;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+
+.proxy-hint-box small {
+  color: #8da1b9;
+  line-height: 1.5;
+  display: block;
+}
+
+.modal-field textarea {
+  width: 100%;
+  background: #0d131c;
+  border: 1px solid #28374a;
+  border-radius: 8px;
+  padding: 9px 12px;
+  color: #fff;
+  font-family: Consolas, monospace;
+  font-size: 11px;
+  resize: vertical;
+}
+.modal-field textarea:focus {
+  outline: none;
+  border-color: #1fe5cf;
+  box-shadow: 0 0 0 2px rgba(31, 229, 207, 0.2);
+}
