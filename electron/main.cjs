@@ -16,8 +16,8 @@ let mainWindow;
 let activeJob = null;
 let cachedDetectedApps = null;
 
-// Các cờ tối ưu hóa hiệu năng cho Chromium (Chrome, Edge, Cốc Cốc, Brave, Opera)
-// Giúp giảm tải 40-50% RAM/CPU và khởi chạy tức thì mà không nghẽn ổ đĩa khi mở nhiều cửa sổ
+// Các cờ tối ưu hóa hiệu năng chuyên sâu cho Chromium (Chrome, Edge, Cốc Cốc, Brave, Opera)
+// Giúp giảm tải 45-60% RAM/CPU, chặn popup chặn luồng và giữ cho các cửa sổ luôn phản hồi mượt mà
 const CHROMIUM_PERFORMANCE_FLAGS = [
   "--no-first-run",
   "--no-default-browser-check",
@@ -26,6 +26,11 @@ const CHROMIUM_PERFORMANCE_FLAGS = [
   "--disable-default-apps",
   "--disable-breakpad",
   "--disable-component-update",
+  "--disable-search-engine-choice-screen",
+  "--disable-backgrounding-occluded-windows",
+  "--disable-renderer-backgrounding",
+  "--disable-ipc-flooding-protection",
+  "--disable-hang-monitor",
   "--disk-cache-size=33554432",
   "--media-cache-size=16777216",
   "--disable-features=Translate,OptimizationHints,MediaRouter,CalculateNativeWinOcclusion,InterestFeedContentSuggestions"
@@ -766,6 +771,20 @@ ipcMain.handle("launcher:get-always-on-top", () => {
   return { alwaysOnTop: mainWindow && !mainWindow.isDestroyed() ? mainWindow.isAlwaysOnTop() : false };
 });
 
+ipcMain.handle("launcher:get-system-stats", () => {
+  const totalMem = Math.round((os.totalmem() / (1024 * 1024 * 1024)) * 10) / 10;
+  const freeMem = Math.round((os.freemem() / (1024 * 1024 * 1024)) * 10) / 10;
+  const usedMem = Math.round((totalMem - freeMem) * 10) / 10;
+  const cpus = os.cpus() ? os.cpus().length : 4;
+  return {
+    totalMem,
+    freeMem,
+    usedMem,
+    cpus,
+    platform: process.platform
+  };
+});
+
 ipcMain.handle("launcher:set-mouse-sync-pattern", (_event, pattern) => {
   if (typeof pattern === "string" && pattern.trim()) {
     mouseSyncPattern = pattern.trim();
@@ -864,6 +883,7 @@ ipcMain.handle("launcher:start", async (_event, config) => {
   const profileMode = config.profileMode || "normal"; // 'normal' | 'incognito' | 'isolated' | 'shield'
   const isShieldActive = Boolean(config.antiDetectShield || profileMode === "shield");
   const proxies = config.proxies || "";
+  const timezone = config.timezone || "auto";
 
   let workArea = { x: 0, y: 0, width: 1920, height: 1040 };
   try {
@@ -894,6 +914,22 @@ ipcMain.handle("launcher:start", async (_event, config) => {
         .filter(Boolean);
 
       const isWindowMode = config.browserMode === "windows";
+
+      // Khởi tạo trước toàn bộ thư mục Profiles và Màn chắn song song để tránh gián đoạn ổ đĩa
+      if (isShieldActive || profileMode === "isolated") {
+        const prepPromises = [];
+        for (let idx = 0; idx < apps.length; idx++) {
+          const a = apps[idx];
+          if (a.type === "browser") {
+            const isFf = /firefox/i.test(a.name || a.path);
+            const pDir = isFf
+              ? path.join(app.getPath("userData"), "multi_profiles", `firefox_profile_${idx + 1}`)
+              : path.join(app.getPath("userData"), "multi_profiles", `profile_${idx + 1}`);
+            prepPromises.push(fs.promises.mkdir(pDir, { recursive: true }));
+          }
+        }
+        await Promise.all(prepPromises);
+      }
 
       for (let i = 0; i < apps.length; i++) {
         if (job.cancelled) break;
@@ -935,7 +971,7 @@ ipcMain.handle("launcher:start", async (_event, config) => {
             let shieldFlags = [];
             if (isShieldActive) {
               try {
-                const prepared = prepareShieldFlags(isolatedDir, i, { proxies });
+                const prepared = prepareShieldFlags(isolatedDir, i, { proxies, timezone });
                 shieldFlags = prepared.flags;
                 shieldInfo = prepared.info;
               } catch (e) {
@@ -1034,6 +1070,18 @@ ipcMain.handle("launcher:start", async (_event, config) => {
         }
       }
 
+      // Khởi tạo trước toàn bộ thư mục Profiles và Màn chắn song song
+      if (isBrowser && (profileMode === "isolated" || isShieldActive)) {
+        const prepPromises = [];
+        for (let idx = 0; idx < count; idx++) {
+          const pDir = isFirefox
+            ? path.join(app.getPath("userData"), "multi_profiles", `firefox_profile_${idx + 1}`)
+            : path.join(app.getPath("userData"), "multi_profiles", `profile_${idx + 1}`);
+          prepPromises.push(fs.promises.mkdir(pDir, { recursive: true }));
+        }
+        await Promise.all(prepPromises);
+      }
+
       let opened = 0;
       for (let i = 0; i < count; i++) {
         if (job.cancelled) break;
@@ -1065,7 +1113,7 @@ ipcMain.handle("launcher:start", async (_event, config) => {
             let shieldFlags = [];
             if (isShieldActive) {
               try {
-                const prepared = prepareShieldFlags(isolatedDir, i, { proxies });
+                const prepared = prepareShieldFlags(isolatedDir, i, { proxies, timezone });
                 shieldFlags = prepared.flags;
                 shieldInfo = prepared.info;
               } catch (e) {

@@ -1,9 +1,10 @@
-import { useEffect, useState, useMemo, useCallback, useRef, memo } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef, memo, useDeferredValue } from "react";
 
 const DEFAULT_URLS = "https://www.google.com";
 const STORAGE_KEY_CUSTOM_APPS = "multi_launcher_custom_apps";
 const STORAGE_KEY_PRESETS = "multi_launcher_saved_presets";
 const STORAGE_KEY_PROXIES = "multi_launcher_saved_proxies";
+const STORAGE_KEY_TIMEZONE = "multi_launcher_saved_timezone";
 
 const BUILTIN_PRESETS = [
   {
@@ -17,7 +18,22 @@ const BUILTIN_PRESETS = [
     grid: true,
     profileMode: "shield",
     antiDetectShield: true,
+    timezone: "auto",
     urls: "https://www.facebook.com"
+  },
+  {
+    id: "google-shield",
+    name: "🛡️ Google Đa Tài Khoản (Anti-Detect)",
+    desc: "Mở 4 cửa sổ Google Search/Gmail với Màn chắn chống quét, ngụy trang phần cứng & canvas riêng",
+    workflow: "single",
+    targetId: "chrome",
+    count: 4,
+    mode: "windows",
+    grid: true,
+    profileMode: "shield",
+    antiDetectShield: true,
+    timezone: "auto",
+    urls: "https://accounts.google.com"
   },
   {
     id: "work",
@@ -55,6 +71,7 @@ const BUILTIN_PRESETS = [
     grid: true,
     profileMode: "shield",
     antiDetectShield: true,
+    timezone: "auto",
     urls: "https://www.google.com"
   }
 ];
@@ -133,6 +150,7 @@ export default function App() {
   // Bộ lọc & Tìm kiếm
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const deferredSearch = useDeferredValue(searchQuery);
 
   // Cấu hình mở
   const [mode, setMode] = useState("windows"); // 'windows' | 'tabs'
@@ -142,8 +160,15 @@ export default function App() {
   const [grid, setGrid] = useState(true);
   const [profileMode, setProfileMode] = useState("shield"); // 'shield' | 'isolated' | 'normal' | 'incognito'
 
-  // Màn chắn chống quét (Anti-Detect Shield) & Cấu hình Proxy
+  // Màn chắn chống quét (Anti-Detect Shield), Cấu hình Proxy & Timezone
   const [antiDetectShield, setAntiDetectShield] = useState(true);
+  const [timezone, setTimezone] = useState(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEY_TIMEZONE) || "auto";
+    } catch {
+      return "auto";
+    }
+  });
   const [proxies, setProxies] = useState(() => {
     try {
       return localStorage.getItem(STORAGE_KEY_PROXIES) || "";
@@ -159,6 +184,9 @@ export default function App() {
       .map((s) => s.trim())
       .filter(Boolean).length;
   }, [proxies]);
+
+  // Thông số tài nguyên hệ thống (RAM & CPU)
+  const [systemStats, setSystemStats] = useState(null);
 
   // Ghim cửa sổ Always on Top
   const [alwaysOnTop, setAlwaysOnTop] = useState(false);
@@ -250,6 +278,13 @@ export default function App() {
       });
     }
 
+    // Tải thông số tài nguyên hệ thống (RAM & CPU)
+    if (window.launcher.getSystemStats) {
+      window.launcher.getSystemStats().then((res) => {
+        if (res) setSystemStats(res);
+      });
+    }
+
     // Khởi tạo trạng thái đồng bộ chuột ban đầu
     if (window.launcher.getMouseSyncStatus) {
       window.launcher.getMouseSyncStatus().then((res) => {
@@ -265,6 +300,13 @@ export default function App() {
         setRunning(false);
         setProgress({ opened: event.opened, total: event.total });
         setStatus(event.message);
+
+        // Cập nhật lại thông số RAM sau khi mở
+        if (window.launcher.getSystemStats) {
+          window.launcher.getSystemStats().then((res) => {
+            if (res) setSystemStats(res);
+          });
+        }
 
         // Kích hoạt Combo tác vụ nếu có yêu cầu
         if (pendingComboRef.current) {
@@ -334,9 +376,9 @@ export default function App() {
     }
   }, [getTargetPattern]);
 
-  // Lọc danh mục & tìm kiếm ứng dụng
+  // Lọc danh mục & tìm kiếm ứng dụng (dùng deferredSearch để gõ tìm mượt mà không khựng UI)
   const filteredApps = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
+    const query = deferredSearch.trim().toLowerCase();
     return apps.filter((app) => {
       const matchCat =
         categoryFilter === "all" ? true :
@@ -353,7 +395,7 @@ export default function App() {
         (app.path && app.path.toLowerCase().includes(query))
       );
     });
-  }, [apps, categoryFilter, searchQuery]);
+  }, [apps, categoryFilter, deferredSearch]);
 
   // Bật / Tắt Ghim trên cùng
   async function handleToggleAlwaysOnTop() {
@@ -599,6 +641,7 @@ export default function App() {
       profileMode,
       antiDetectShield,
       proxies,
+      timezone,
       urls,
       isCustom: true
     };
@@ -630,6 +673,7 @@ export default function App() {
     if (p.profileMode) setProfileMode(p.profileMode);
     if (p.antiDetectShield !== undefined) setAntiDetectShield(p.antiDetectShield);
     if (p.proxies !== undefined) setProxies(p.proxies);
+    if (p.timezone !== undefined) setTimezone(p.timezone);
 
     if (p.workflow === "single" && p.targetId) {
       const found = apps.find((a) => a.id === p.targetId && a.available) || apps.find((a) => a.available);
@@ -681,7 +725,8 @@ export default function App() {
         grid: comboOptions?.autoArrange ? true : grid,
         profileMode,
         antiDetectShield,
-        proxies
+        proxies,
+        timezone
       });
 
       if (!result.ok) {
@@ -710,7 +755,8 @@ export default function App() {
         grid: comboOptions?.autoArrange ? true : grid,
         profileMode,
         antiDetectShield,
-        proxies
+        proxies,
+        timezone
       });
 
       if (!result.ok) {
@@ -759,6 +805,15 @@ export default function App() {
           >
             {syncActive ? `🟢 Đang đồng bộ (${syncCount} tab)` : "⚪ Chuột độc lập (F8)"}
           </span>
+
+          {systemStats && (
+            <span
+              className="pill perf-pill"
+              title={`Bộ nhớ RAM: ${systemStats.usedMem}/${systemStats.totalMem} GB (${Math.round((systemStats.usedMem / systemStats.totalMem) * 100)}%) • CPU: ${systemStats.cpus} Nhân`}
+            >
+              ⚡ RAM: {systemStats.usedMem}/{systemStats.totalMem} GB
+            </span>
+          )}
 
           <button
             type="button"
@@ -850,6 +905,19 @@ export default function App() {
             title="Nạp ngay cấu hình Facebook Đa Nick kèm Màn Chắn Chống Quét & Vân tay độc lập"
           >
             🛡️ Facebook Shield
+          </button>
+
+          <button
+            type="button"
+            className="combo-btn shield-combo-btn"
+            onClick={() => {
+              const ggPreset = BUILTIN_PRESETS.find((p) => p.id === "google-shield");
+              if (ggPreset) applyPreset(ggPreset);
+            }}
+            disabled={running}
+            title="Nạp ngay cấu hình Google Đa Tài Khoản kèm Màn Chắn Chống Quét & Vân tay độc lập"
+          >
+            🛡️ Google Shield
           </button>
 
           <button
@@ -1204,6 +1272,54 @@ export default function App() {
                   <strong>Khóa rò rỉ WebRTC IP</strong>
                   <small>Ngăn chặn website quét ra địa chỉ IP nội bộ</small>
                 </div>
+              </div>
+            </div>
+
+            {/* Lựa chọn Múi giờ giả lập & Test vân tay */}
+            <div className="shield-extra-controls">
+              <div className="shield-tz-group">
+                <span className="shield-tz-title">🌐 Giả lập múi giờ (Timezone):</span>
+                <select
+                  value={timezone}
+                  onChange={(e) => {
+                    setTimezone(e.target.value);
+                    localStorage.setItem(STORAGE_KEY_TIMEZONE, e.target.value);
+                  }}
+                  disabled={running || !antiDetectShield}
+                  className="shield-tz-select"
+                >
+                  <option value="auto">🌐 Tự động (Khớp theo Proxy / Hệ thống)</option>
+                  <option value="Asia/Ho_Chi_Minh">🇻🇳 Việt Nam (GMT+7 - Asia/Ho_Chi_Minh)</option>
+                  <option value="America/New_York">🇺🇸 Mỹ Đông - New York (EST)</option>
+                  <option value="America/Los_Angeles">🇺🇸 Mỹ Tây - California (PST)</option>
+                  <option value="Asia/Tokyo">🇯🇵 Nhật Bản - Tokyo (JST)</option>
+                  <option value="Europe/London">🇬🇧 Anh Quốc - London (GMT)</option>
+                  <option value="Europe/Paris">🇫🇷 Châu Âu - Paris (CET)</option>
+                  <option value="Asia/Singapore">🇸🇬 Singapore (SGT)</option>
+                </select>
+              </div>
+
+              <div className="shield-check-hint">
+                <small>
+                  🔍 Kiểm tra độ sạch vân tay:{" "}
+                  <button
+                    type="button"
+                    className="shield-link-btn"
+                    onClick={() => window.launcher.openUrl && window.launcher.openUrl("https://pixelscan.net")}
+                    title="Mở trang kiểm tra vân tay Pixelscan.net"
+                  >
+                    Pixelscan
+                  </button>{" "}
+                  •{" "}
+                  <button
+                    type="button"
+                    className="shield-link-btn"
+                    onClick={() => window.launcher.openUrl && window.launcher.openUrl("https://browserleaks.com/canvas")}
+                    title="Mở trang kiểm tra Canvas/WebGL BrowserLeaks"
+                  >
+                    BrowserLeaks
+                  </button>
+                </small>
               </div>
             </div>
           </div>

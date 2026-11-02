@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld("launcher", {
   setMouseSyncPattern: (pattern) => ipcRenderer.invoke("launcher:set-mouse-sync-pattern", pattern),
   toggleAlwaysOnTop: (flag) => ipcRenderer.invoke("launcher:toggle-always-on-top", flag),
   getAlwaysOnTop: () => ipcRenderer.invoke("launcher:get-always-on-top"),
+  getSystemStats: () => ipcRenderer.invoke("launcher:get-system-stats"),
   onMouseSyncStatus: (callback) => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("launcher:sync-status", listener);

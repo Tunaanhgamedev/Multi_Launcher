@@ -122,6 +122,15 @@ h1 {
   box-shadow: 0 0 12px #7966eb55;
 }
 
+.perf-pill {
+  color: #79ddf5;
+  background: #112633;
+  border-color: #1e4f68;
+  font-family: Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.2px;
+}
+
 .pill-active {
   color: #60f5a7;
   background: #133927;
@@ -1534,4 +1543,77 @@ footer span {
   outline: none;
   border-color: #1fe5cf;
   box-shadow: 0 0 0 2px rgba(31, 229, 207, 0.2);
+}
+
+/* Tối ưu hóa Màn Chắn: Múi giờ & Kiểm tra độ sạch */
+.shield-extra-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #1a2c3a;
+  flex-wrap: wrap;
+}
+
+.shield-tz-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shield-tz-title {
+  font-size: 10.5px;
+  color: #a0b6d0;
+  font-weight: 600;
+}
+
+.shield-tz-select {
+  background: #0d1520;
+  border: 1px solid #283d54;
+  border-radius: 6px;
+  color: #4efcd2;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 4px 8px;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.shield-tz-select:focus {
+  border-color: #1fe5cf;
+  box-shadow: 0 0 0 2px rgba(31, 229, 207, 0.25);
+}
+
+.shield-check-hint {
+  font-size: 10px;
+  color: #7b8ea6;
+}
+
+.shield-link-btn {
+  background: transparent;
+  border: none;
+  color: #4efcd2;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  font-size: 10px;
+  font-weight: 600;
+  transition: color 0.15s;
+}
+
+.shield-link-btn:hover {
+  color: #ffffff;
+}
+
+/* Phần cứng tăng tốc GPU rendering (Zero-jank UI) */
+.app-card,
+.combo-btn,
+.preset-btn,
+.workflow-btn {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: transform;
 }

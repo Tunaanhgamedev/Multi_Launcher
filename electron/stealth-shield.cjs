@@ -25,6 +25,17 @@ const GPU_CONFIGS = [
   { vendor: "Google Inc. (Intel)", renderer: "ANGLE (Intel, Intel(R) UHD Graphics 770 Direct3D11 vs_5_0 ps_5_0, D3D11)" }
 ];
 
+// Danh sách độ phân giải màn hình phổ biến chuẩn desktop
+const SCREEN_RESOLUTIONS = [
+  { width: 1920, height: 1080, availWidth: 1920, availHeight: 1040 },
+  { width: 2560, height: 1440, availWidth: 2560, availHeight: 1400 },
+  { width: 1680, height: 1050, availWidth: 1680, availHeight: 1010 },
+  { width: 1600, height: 900,  availWidth: 1600, availHeight: 860 },
+  { width: 1536, height: 864,  availWidth: 1536, availHeight: 824 },
+  { width: 1440, height: 900,  availWidth: 1440, availHeight: 860 },
+  { width: 1366, height: 768,  availWidth: 1366, availHeight: 728 }
+];
+
 const CPU_CORES_POOL = [4, 6, 8, 12, 16];
 const MEMORY_POOL = [8, 16, 32];
 
@@ -65,7 +76,6 @@ function parseProxyList(rawText) {
     let pass = "";
 
     if (clean.includes("@")) {
-      // user:pass@host:port
       const [authPart, hostPart] = clean.split("@");
       const [u, p] = authPart.split(":");
       user = u || "";
@@ -74,7 +84,6 @@ function parseProxyList(rawText) {
       host = h || "";
       port = pt || "8080";
     } else {
-      // host:port:user:pass hoặc host:port
       const parts = clean.split(":");
       if (parts.length >= 4) {
         host = parts[0];
@@ -121,8 +130,10 @@ function createShieldExtension(extensionDir, profileIndex, profileConfig = {}) {
     gpu = GPU_CONFIGS[profileIndex % GPU_CONFIGS.length],
     cores = CPU_CORES_POOL[profileIndex % CPU_CORES_POOL.length],
     memory = MEMORY_POOL[profileIndex % MEMORY_POOL.length],
+    screen = SCREEN_RESOLUTIONS[profileIndex % SCREEN_RESOLUTIONS.length],
     canvasSeed = (profileIndex + 1) * 7 + 3,
     audioNoise = ((profileIndex + 1) * 0.0000031).toFixed(7),
+    timezone = "",
     proxy = null
   } = profileConfig;
 
@@ -131,7 +142,7 @@ function createShieldExtension(extensionDir, profileIndex, profileConfig = {}) {
   const manifest = {
     manifest_version: 3,
     name: `Multi Launcher Shield Profile ${profileIndex + 1}`,
-    version: "1.0",
+    version: "1.2",
     description: "Màn chắn bảo vệ danh tính thiết bị và chống quét đa tài khoản",
     content_scripts: [
       {
@@ -170,7 +181,19 @@ chrome.webRequest.onAuthRequired.addListener(
 
   fs.writeFileSync(path.join(extensionDir, "manifest.json"), JSON.stringify(manifest, null, 2), "utf8");
 
-  // 2. Tạo file shield.js (Kịch bản lõi của Màn Chắn)
+  // 2. Tạo file shield.js (Kịch bản lõi của Màn Chắn với ngụy trang nâng cao)
+  const timezoneCode = timezone && timezone !== "auto" ? `
+  // Giả lập Múi giờ địa phương (Timezone)
+  try {
+    const TARGET_TZ = "${timezone.replace(/"/g, '\\"')}";
+    const origResolved = Intl.DateTimeFormat.prototype.resolvedOptions;
+    Intl.DateTimeFormat.prototype.resolvedOptions = function() {
+      const res = origResolved.apply(this, arguments);
+      return Object.assign({}, res, { timeZone: TARGET_TZ });
+    };
+  } catch (e) {}
+` : "";
+
   const shieldJs = `
 // ========================================================
 // Multi Launcher Pro - Màn Chắn Chống Quét & Vân Tay Thiết Bị
@@ -210,6 +233,11 @@ chrome.webRequest.onAuthRequired.addListener(
       enumerable: true,
       configurable: true
     });
+    Object.defineProperty(Navigator.prototype, 'maxTouchPoints', {
+      get: () => 0,
+      enumerable: true,
+      configurable: true
+    });
   } catch (e) {}
 
   // 3. ĐỒNG BỘ NGÔN NGỮ & ĐỊA PHƯƠNG
@@ -226,7 +254,22 @@ chrome.webRequest.onAuthRequired.addListener(
     });
   } catch (e) {}
 
-  // 4. MÀN CHẮN WEBGL (GIẢ LẬP GPU ĐỘC LẬP CHO TỪNG CỬA SỔ)
+  // 4. GIẢ LẬP ĐỘ PHÂN GIẢI MÀN HÌNH ĐỘC LẬP
+  try {
+    const sW = ${screen.width};
+    const sH = ${screen.height};
+    const avW = ${screen.availWidth};
+    const avH = ${screen.availHeight};
+    Object.defineProperty(window.screen, 'width', { get: () => sW, configurable: true });
+    Object.defineProperty(window.screen, 'height', { get: () => sH, configurable: true });
+    Object.defineProperty(window.screen, 'availWidth', { get: () => avW, configurable: true });
+    Object.defineProperty(window.screen, 'availHeight', { get: () => avH, configurable: true });
+    Object.defineProperty(window.screen, 'colorDepth', { get: () => 24, configurable: true });
+    Object.defineProperty(window.screen, 'pixelDepth', { get: () => 24, configurable: true });
+  } catch (e) {}
+${timezoneCode}
+
+  // 5. MÀN CHẮN WEBGL (GIẢ LẬP GPU ĐỘC LẬP CHO TỪNG CỬA SỔ)
   try {
     const SPOOF_VENDOR = "${gpu.vendor.replace(/"/g, '\\"')}";
     const SPOOF_RENDERER = "${gpu.renderer.replace(/"/g, '\\"')}";
@@ -245,7 +288,7 @@ chrome.webRequest.onAuthRequired.addListener(
     if (window.WebGL2RenderingContext) hookGl(WebGL2RenderingContext.prototype);
   } catch (e) {}
 
-  // 5. MÀN CHẮN CANVAS (THÊM NHIỄU VI MÔ ĐỂ HASH CANVAS KHÁC NHAU GIỮA CÁC PROFILE)
+  // 6. MÀN CHẮN CANVAS (DETERMINISTIC PER-PROFILE MICRO NOISE)
   try {
     const SEED = ${canvasSeed};
     const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
@@ -254,9 +297,18 @@ chrome.webRequest.onAuthRequired.addListener(
         if (this.width > 0 && this.height > 0) {
           const ctx = this.getContext('2d');
           if (ctx) {
-            const img = ctx.getImageData(0, 0, 1, 1);
-            img.data[0] = (img.data[0] + SEED) % 256;
-            ctx.putImageData(img, 0, 0);
+            const checkW = Math.min(this.width, 16);
+            const checkH = Math.min(this.height, 16);
+            const img = ctx.getImageData(0, 0, checkW, checkH);
+            if (img && img.data && img.data.length >= 4) {
+              for (let i = 0; i < img.data.length; i += 4) {
+                if (img.data[i + 3] > 0) {
+                  img.data[i] = (img.data[i] + (SEED % 3)) % 256;
+                  break;
+                }
+              }
+              ctx.putImageData(img, 0, 0);
+            }
           }
         }
       } catch (err) {}
@@ -267,13 +319,18 @@ chrome.webRequest.onAuthRequired.addListener(
     CanvasRenderingContext2D.prototype.getImageData = function(...args) {
       const res = origGetImageData.apply(this, args);
       if (res && res.data && res.data.length >= 4) {
-        res.data[0] = (res.data[0] + SEED) % 256;
+        for (let i = 0; i < Math.min(res.data.length, 32); i += 4) {
+          if (res.data[i + 3] > 0) {
+            res.data[i] = (res.data[i] + (SEED % 3)) % 256;
+            break;
+          }
+        }
       }
       return res;
     };
   } catch (e) {}
 
-  // 6. MÀN CHẮN AUDIO CONTEXT (LÀM LỆCH HASH ÂM THANH)
+  // 7. MÀN CHẮN AUDIO CONTEXT NÂNG CAO (LÀM LỆCH HASH ÂM THANH MÀ KHÔNG GÂY RÈ)
   try {
     const AUDIO_OFFSET = ${audioNoise};
     if (window.AudioBuffer) {
@@ -282,19 +339,51 @@ chrome.webRequest.onAuthRequired.addListener(
         const buf = origGetChannelData.apply(this, [ch]);
         if (buf && buf.length > 0) {
           buf[0] = buf[0] + AUDIO_OFFSET;
+          if (buf.length > 10) buf[10] = buf[10] - (AUDIO_OFFSET * 0.5);
         }
         return buf;
+      };
+
+      if (AudioBuffer.prototype.copyFromChannel) {
+        const origCopy = AudioBuffer.prototype.copyFromChannel;
+        AudioBuffer.prototype.copyFromChannel = function(dest, ch, start) {
+          origCopy.apply(this, [dest, ch, start]);
+          if (dest && dest.length > 0) dest[0] = dest[0] + AUDIO_OFFSET;
+        };
+      }
+    }
+
+    if (window.AnalyserNode) {
+      const origGetFloatFreq = AnalyserNode.prototype.getFloatFrequencyData;
+      AnalyserNode.prototype.getFloatFrequencyData = function(arr) {
+        origGetFloatFreq.apply(this, [arr]);
+        if (arr && arr.length > 0) arr[0] += AUDIO_OFFSET;
       };
     }
   } catch (e) {}
 
-  // 7. CHỐNG RÒ RỈ ĐỊA CHỈ IP NỘI BỘ QUA WEBRTC
+  // 8. CHỐNG RÒ RỈ ĐỊA CHỈ IP NỘI BỘ QUA WEBRTC
   try {
     if (window.RTCPeerConnection) {
       const origCreateOffer = RTCPeerConnection.prototype.createOffer;
       RTCPeerConnection.prototype.createOffer = function(options) {
         return origCreateOffer.apply(this, [options]);
       };
+    }
+  } catch (e) {}
+
+  // 9. GIẢ LẬP NETWORK INFORMATION API
+  try {
+    if (!navigator.connection) {
+      Object.defineProperty(Navigator.prototype, 'connection', {
+        get: () => ({
+          effectiveType: '4g',
+          rtt: 50,
+          downlink: 10,
+          saveData: false
+        }),
+        configurable: true
+      });
     }
   } catch (e) {}
 })();
@@ -306,7 +395,9 @@ chrome.webRequest.onAuthRequired.addListener(
     userAgent,
     gpu,
     cores,
-    memory
+    memory,
+    screen,
+    timezone
   };
 }
 
@@ -320,7 +411,8 @@ function prepareShieldFlags(profileDir, profileIndex, shieldOptions = {}) {
 
   const extensionDir = path.join(profileDir, "anti_detect_shield");
   const extInfo = createShieldExtension(extensionDir, profileIndex, {
-    proxy: assignedProxy
+    proxy: assignedProxy,
+    timezone: shieldOptions.timezone || ""
   });
 
   const flags = [
@@ -346,6 +438,11 @@ function prepareShieldFlags(profileDir, profileIndex, shieldOptions = {}) {
     `--disable-extensions-except=${extensionDir}`
   ];
 
+  // Nếu có cấu hình Múi giờ
+  if (shieldOptions.timezone && shieldOptions.timezone !== "auto") {
+    flags.push(`--timezone=${shieldOptions.timezone}`);
+  }
+
   // Nếu có cấu hình Proxy cho cửa sổ này
   if (assignedProxy) {
     flags.push(`--proxy-server=${assignedProxy.serverUrl}`);
@@ -359,6 +456,8 @@ function prepareShieldFlags(profileDir, profileIndex, shieldOptions = {}) {
       gpu: extInfo.gpu.renderer,
       cores: extInfo.cores,
       memory: extInfo.memory,
+      screen: `${extInfo.screen.width}x${extInfo.screen.height}`,
+      timezone: shieldOptions.timezone || "auto",
       proxy: assignedProxy ? assignedProxy.serverUrl : null
     }
   };
@@ -367,6 +466,7 @@ function prepareShieldFlags(profileDir, profileIndex, shieldOptions = {}) {
 module.exports = {
   REALISTIC_USER_AGENTS,
   GPU_CONFIGS,
+  SCREEN_RESOLUTIONS,
   parseProxyList,
   createShieldExtension,
   prepareShieldFlags
